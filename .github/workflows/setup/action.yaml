@@ -38,6 +38,7 @@ runs:
       run: echo "$CACHE_COMMIT_DATE"
     - name: Step 1 - Record Start Time
       id: step1_start
+      shell: bash
       run: echo "start_time=$(date +%s)" >> $GITHUB_ENV
     - id: scons-cache
       uses: ./.github/workflows/auto-cache
@@ -49,6 +50,7 @@ runs:
           scons-${{ runner.arch }}
     - name: Step 1 - Record End Time and Calculate Duration
       id: step1_end
+      shell: bash
       run: |
         end_time=$(date +%s)
         duration=$((end_time - $start_time))
