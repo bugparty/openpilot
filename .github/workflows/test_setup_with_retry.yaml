@@ -38,7 +38,24 @@ jobs:
       run: |
         tools/install_ubuntu_dependencies.sh
         sudo apt-get install -y --no-install-recommends sudo tzdata locales ssh pulseaudio xvfb x11-xserver-utils gnome-screenshot python3-tk python3-dev libx11-6
-
+        mkdir -p /tmp/opencl-driver-intel && \
+        cd /tmp/opencl-driver-intel && \
+        wget https://github.com/intel/llvm/releases/download/2024-WW14/oclcpuexp-2024.17.3.0.09_rel.tar.gz && \
+        wget https://github.com/oneapi-src/oneTBB/releases/download/v2021.12.0/oneapi-tbb-2021.12.0-lin.tgz && \
+        sudo mkdir -p /opt/intel/oclcpuexp_2024.17.3.0.09_rel && \
+        cd /opt/intel/oclcpuexp_2024.17.3.0.09_rel && \
+        sudo tar -zxvf /tmp/opencl-driver-intel/oclcpuexp-2024.17.3.0.09_rel.tar.gz && \
+        sudo mkdir -p /etc/OpenCL/vendors && \
+        sudo echo /opt/intel/oclcpuexp_2024.17.3.0.09_rel/x64/libintelocl.so > /etc/OpenCL/vendors/intel_expcpu.icd && \
+        cd /opt/intel && \
+        sudo tar -zxvf /tmp/opencl-driver-intel/oneapi-tbb-2021.12.0-lin.tgz && \
+        sudo ln -s /opt/intel/oneapi-tbb-2021.12.0/lib/intel64/gcc4.8/libtbb.so /opt/intel/oclcpuexp_2024.17.3.0.09_rel/x64 && \
+        sudo ln -s /opt/intel/oneapi-tbb-2021.12.0/lib/intel64/gcc4.8/libtbbmalloc.so /opt/intel/oclcpuexp_2024.17.3.0.09_rel/x64 && \
+        sudo ln -s /opt/intel/oneapi-tbb-2021.12.0/lib/intel64/gcc4.8/libtbb.so.12 /opt/intel/oclcpuexp_2024.17.3.0.09_rel/x64 && \
+        sudo ln -s /opt/intel/oneapi-tbb-2021.12.0/lib/intel64/gcc4.8/libtbbmalloc.so.2 /opt/intel/oclcpuexp_2024.17.3.0.09_rel/x64 && \
+        sudo mkdir -p /etc/ld.so.conf.d && \
+        sudo echo /opt/intel/oclcpuexp_2024.17.3.0.09_rel/x64 > /etc/ld.so.conf.d/libintelopenclexp.conf && \
+        sudo ldconfig -f /etc/ld.so.conf.d/libintelopenclexp.conf
 
 
     - name: Install dependencies
