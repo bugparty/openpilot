@@ -71,15 +71,15 @@ runs:
         find . -type f -not -executable -not -perm 644 -exec chmod 644 {} \;
     # build our docker image
     - name: Step 2 - Record End Time and Calculate Duration
-    id: step2_end
-    shell: bash
-    run: |
-      end_time=$(date +%s)
-      duration=$((end_time - $start_time))
-      echo "End time: $end_time"
-      echo "Step 1 duration: ${duration} seconds"
-    env:
-      start_time: ${{ env.start_time }}
+      id: step2_end
+      shell: bash
+      run: |
+        end_time=$(date +%s)
+        duration=$((end_time - $start_time))
+        echo "End time: $end_time"
+        echo "Step 1 duration: ${duration} seconds"
+      env:
+        start_time: ${{ env.start_time }}
     - name: print env.build
       shell: bash
       run: echo ${{ env.BUILD }}
