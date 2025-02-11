@@ -36,5 +36,3 @@ jobs:
         echo "PUSH_IMAGE=true" >> "$GITHUB_ENV"
         $DOCKER_LOGIN
     - uses: ./.github/workflows/setup-with-retry
-    - uses: ./.github/workflows/compile-openpilot
-      timeout-minutes: 30
