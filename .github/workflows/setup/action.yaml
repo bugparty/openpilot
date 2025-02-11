@@ -60,9 +60,9 @@ runs:
         start_time: ${{ env.start_time }}
     # as suggested here: https://github.com/moby/moby/issues/32816#issuecomment-910030001
     - name: Step 2 - Record Start Time
-    id: step2_start
-    shell: bash
-    run: echo "start_time=$(date +%s)" >> $GITHUB_ENV
+      id: step2_start
+      shell: bash
+      run: echo "start_time=$(date +%s)" >> $GITHUB_ENV
     - id: normalize-file-permissions
       shell: bash
       name: Normalize file permissions to ensure a consistent docker build cache
