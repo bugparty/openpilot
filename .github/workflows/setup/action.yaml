@@ -80,5 +80,8 @@ runs:
       echo "Step 1 duration: ${duration} seconds"
     env:
       start_time: ${{ env.start_time }}
+    - name: print env.build
+      shell: bash
+      run: echo ${{ env.BUILD }}
     - shell: bash
       run: eval ${{ env.BUILD }}
