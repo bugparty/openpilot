@@ -37,6 +37,8 @@ jobs:
       shell: bash
       run: |
         tools/install_ubuntu_dependencies.sh
+        sudo apt-get install -y --no-install-recommends sudo tzdata locales ssh pulseaudio xvfb x11-xserver-utils gnome-screenshot python3-tk python3-dev libx11-6
+
 
 
     - name: Install dependencies
