@@ -33,6 +33,68 @@ jobs:
       with:
           enable-cache: true
           cache-local-path: "/tmp/uvcache"
+    - name: install ubuntu packages
+      shell: bash
+      run: |
+        apt-get update && apt-get install -y --no-install-recommends \
+        apt-utils \
+        alien \
+        unzip \
+        tar \
+        curl \
+        xz-utils \
+        dbus \
+        gcc-arm-none-eabi \
+        tmux \
+        vim \
+        libx11-6 \
+        wget \
+        ca-certificates \
+        clang \
+        build-essential \
+        gcc-arm-none-eabi \
+        liblzma-dev \
+        capnproto \
+        libcapnp-dev \
+        curl \
+        libcurl4-openssl-dev \
+        git \
+        git-lfs \
+        ffmpeg \
+        libavformat-dev \
+        libavcodec-dev \
+        libavdevice-dev \
+        libavutil-dev \
+        libavfilter-dev \
+        libbz2-dev \
+        libeigen3-dev \
+        libffi-dev \
+        libglew-dev \
+        libgles2-mesa-dev \
+        libglfw3-dev \
+        libglib2.0-0 \
+        libjpeg-dev \
+        libqt5charts5-dev \
+        libncurses5-dev \
+        libssl-dev \
+        libusb-1.0-0-dev \
+        libzmq3-dev \
+        libzstd-dev \
+        libsqlite3-dev \
+        libsystemd-dev \
+        locales \
+        opencl-headers \
+        ocl-icd-libopencl1 \
+        ocl-icd-opencl-dev \
+        portaudio19-dev \
+        qttools5-dev-tools \
+        libqt5svg5-dev \
+        libqt5serialbus5-dev  \
+        libqt5x11extras5-dev \
+        libqt5opengl5-dev \
+        && rm -rf /var/lib/apt/lists/*
+
+
     - name: Install dependencies
       shell: bash
       run: |
