@@ -22,6 +22,49 @@ on:
   workflow_dispatch:
 
 jobs:
+  uv_play:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Define a custom uv cache path
+      uses: astral-sh/setup-uv@v5
+      with:
+          enable-cache: true
+          cache-local-path: "/tmp/uvcache"
+    - name: Install dependencies
+      shell: bash
+      run: |
+        echo "installing python packages..."
+        uv sync --frozen --all-extras
+        source .venv/bin/activate
+  uv_play2:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Restore uv cache
+        uses: actions/cache@v3
+        with:
+                path: /tmp/uvcache
+                key: ${{ runner.os }}-node-${{ hashFiles('pyproject.toml') }}
+                restore-keys: |
+                  ${{ runner.os }}-node-
+      - name: Define a custom uv cache path
+        uses: astral-sh/setup-uv@v5
+        with:
+            enable-cache: false
+            cache-local-path: "/tmp/uvcache"
+      - name: Install dependencies
+        shell: bash
+        run: |
+          echo "installing python packages..."
+          uv sync --frozen --all-extras
+          source .venv/bin/activate
+
+
   build:
     runs-on:
       - ${{ ((github.repository == 'commaai/openpilot') && ((github.event_name != 'pull_request') || (github.event.pull_request.head.repo.full_name == 'commaai/openpilot'))) && 'namespace-profile-amd64-8x16' || 'ubuntu-24.04' }}
