@@ -36,6 +36,9 @@ runs:
       run: echo "CACHE_COMMIT_DATE=$(git log -1 --pretty='format:%cd' --date=format:'%Y-%m-%d-%H:%M')" >> $GITHUB_ENV
     - shell: bash
       run: echo "$CACHE_COMMIT_DATE"
+    - name: Step 1 - Record Start Time
+      id: step1_start
+      run: echo "start_time=$(date +%s)" >> $GITHUB_ENV
     - id: scons-cache
       uses: ./.github/workflows/auto-cache
       with:
@@ -44,6 +47,15 @@ runs:
         restore-keys: |
           scons-${{ runner.arch }}-${{ env.CACHE_COMMIT_DATE }}
           scons-${{ runner.arch }}
+    - name: Step 1 - Record End Time and Calculate Duration
+      id: step1_end
+      run: |
+        end_time=$(date +%s)
+        duration=$((end_time - $start_time))
+        echo "End time: $end_time"
+        echo "Step 1 duration: ${duration} seconds"
+      env:
+        start_time: ${{ env.start_time }}
     # as suggested here: https://github.com/moby/moby/issues/32816#issuecomment-910030001
     - id: normalize-file-permissions
       shell: bash
