@@ -32,6 +32,10 @@ jobs:
         run: |
           cat > render_bench.py <<'PY'
           import time, numpy as np
+          # MetaDrive hardcodes "macOS can't do offscreen" and forces onscreen -> needs a
+          # window -> fails headless. We proved headless offscreen GL works, so defeat it.
+          import metadrive.engine.core.engine_core as _ec
+          _ec.is_mac = lambda: False
           from metadrive.component.map.pg_map import MapGenerateMethod
           from metadrive.envs.metadrive_env import MetaDriveEnv
           from metadrive.component.sensors.rgb_camera import RGBCamera
