@@ -6,6 +6,8 @@ name: mac-build
 # has no LFS storage, so point git-lfs at upstream commaai to fetch the model onnx).
 on:
   workflow_dispatch:
+  push:
+    branches: [ mac-build ]
 
 jobs:
   build:
