@@ -108,9 +108,12 @@ jobs:
           cam.get_cam().reparentTo(env.vehicle.origin)
           cam.get_cam().setPos(Vec3(0,0,1.22)); cam.get_cam().setHpr(Vec3(0,0,0))
 
+          from panda3d.core import Vec3 as _V3
           frames = []
           for i in range(NFRAMES):
             v = env.vehicle
+            # re-assert camera POV every frame (like the bridge's get_cam_as_rgb)
+            c = cam.get_cam(); c.reparentTo(v.origin); c.setPos(_V3(0,0,1.22)); c.setHpr(_V3(0,0,0))
             # simple lane-centering so the clip actually follows the road
             steer = 0.0
             try:
@@ -133,23 +136,26 @@ jobs:
                 f"mean {np.mean(frames):.1f} std {np.std(frames):.1f}", flush=True)
           import imageio
           os.makedirs("out", exist_ok=True)
-          # stills first (so we keep something even if mp4 encoding fails)
-          for idx in (30, 90, 150, 210):
-            if idx < len(frames): imageio.imwrite(f"out/{TAG}_frame_{idx:03d}.png", frames[idx])
-          if USE_TINY:
+          # ~8 stills spread across the clip, then an mp4 (for BOTH renderers)
+          step = max(1, len(frames)//8)
+          for idx in range(0, len(frames), step):
+            imageio.imwrite(f"out/{TAG}_frame_{idx:03d}.png", frames[idx])
+          try:
             imageio.mimwrite(f"out/metadrive_{TAG}.mp4", frames, fps=20, quality=7)
             print(f"wrote out/metadrive_{TAG}.mp4", flush=True)
+          except Exception as e:
+            print("mp4 encode failed:", e, flush=True)
           PY
 
       - name: Render clip (p3tinydisplay)
         continue-on-error: true
         run: python3 render_video.py
 
-      - name: Render stills (Apple Software GL — correct but slow, for quality compare)
+      - name: Render clip (Apple Software GL — correct but slow, for quality compare)
         continue-on-error: true
         env:
           TINYDISPLAY: "0"
-          NFRAMES: "60"
+          NFRAMES: "140"
         run: python3 render_video.py
 
       - name: Upload video artifact
