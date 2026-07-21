@@ -118,6 +118,14 @@ jobs:
           env = MetaDriveEnv(config)
           env.reset()
           print(f"env ready in {time.perf_counter()-t0:.1f}s", flush=True)
+          # Is the headless Cocoa GL hardware or software? (decides if 674fps perceive was real)
+          try:
+            gsg = env.engine.win.getGsg()
+            print(f"GL_VENDOR   : {gsg.getDriverVendor()}", flush=True)
+            print(f"GL_RENDERER : {gsg.getDriverRenderer()}", flush=True)
+            print(f"GL_VERSION  : {gsg.getDriverVersion()}", flush=True)
+          except Exception as _e:
+            print("gsg query failed:", _e, flush=True)
 
           cam = env.engine.sensors["rgb_road"]
           cam.get_cam().reparentTo(env.vehicle.origin)
@@ -141,6 +149,9 @@ jobs:
           print(f"step-only     : median {s_med:6.1f} ms  (min {s_min:.1f} / max {s_max:.1f})  -> {1000/s_med:.1f} fps", flush=True)
           c_med, c_min, c_max = med_ms(lambda: (env.step([0,0.0]), cam.perceive(to_float=False)), N)
           print(f"step+perceive : median {c_med:6.1f} ms  (min {c_min:.1f} / max {c_max:.1f})  -> {1000/c_med:.1f} fps   need >= 20", flush=True)
+          ge = env.engine.graphicsEngine
+          r_med, r_min, r_max = med_ms(lambda: ge.render_frame(), N)
+          print(f"renderFrame   : median {r_med:6.1f} ms  (min {r_min:.1f} / max {r_max:.1f})  -> {1000/r_med:.1f} fps   <- TRUE per-frame", flush=True)
           print("img shape:", np.asarray(cam.perceive(to_float=False)).shape, flush=True)
 
           # ---- profile where env.step's ~386 ms actually goes ----
