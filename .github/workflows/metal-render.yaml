@@ -39,6 +39,10 @@ jobs:
           # import so our values win (PRC = last-loaded-wins).
           import metadrive.engine.core.engine_core as _ec
           _ec.is_mac = lambda: False           # keep mode == offscreen (=> BFRefuseWindow path)
+          # simplepbr sets up a MAIN-WINDOW tonemap post-process that is degenerate in
+          # headless (1x1 disabled main window) -> crashes. pbrpipe is never used later in
+          # engine_core; camera sensors + terrain render independently. Skip it.
+          _ec.init = lambda *a, **k: None
 
           # ROOT CAUSE: ShowBase._doOpenWindow uses fbprops=FrameBufferProperties.getDefault(),
           # which the headless Cocoa first-buffer can't match ("no usable pixel format").
