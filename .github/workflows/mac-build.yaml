@@ -33,6 +33,11 @@ jobs:
           FILTERED=$(echo "$PATH" | tr ':' '\n' | grep -v '/opt/homebrew' | tr '\n' ':')
           echo "PATH=${FILTERED}/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" >> $GITHUB_ENV
 
+      - name: Make op.sh git-lfs pull non-fatal (a few fork-snapshot objects are absent upstream)
+        run: |
+          sed -i.bak 's/if ! retry 3 git lfs pull; then/if ! { retry 3 git lfs pull || true; }; then/' tools/op.sh
+          grep -n "git lfs pull" tools/op.sh
+
       - name: op.sh setup
         run: ./tools/op.sh setup
 
