@@ -40,8 +40,12 @@ jobs:
           import metadrive.engine.core.engine_core as _ec
           _ec.is_mac = lambda: False           # defeat its offscreen->onscreen override
           _ec._suppress_warning = lambda: None  # keep display notify so we SEE why makeOutput fails
+          # MetaDrive forces "gl-version 4 1" (core) for mac at import; headless Cocoa
+          # pbuffers can't find a core-profile pixel format. Override to 3.3 (still shader
+          # capable) — loaded after import so it wins.
           for _l in ["framebuffer-multisample 0", "multisamples 1", "framebuffer-stencil 0",
-                     "back-buffers 0", "notify-level-display spam", "notify-level-glgsg spam"]:
+                     "back-buffers 0", "gl-version 3 3",
+                     "notify-level-display spam"]:
             loadPrcFileData("", _l)
           from metadrive.component.map.pg_map import MapGenerateMethod
           from metadrive.envs.metadrive_env import MetaDriveEnv
