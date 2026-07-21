@@ -27,7 +27,11 @@ jobs:
           cat > render_video.py <<'PY'
           import os, time, numpy as np
           from panda3d.core import loadPrcFileData
-          loadPrcFileData("", "load-display p3tinydisplay")   # the fast software rasterizer
+          USE_TINY = os.environ.get("TINYDISPLAY", "1") == "1"
+          TAG = "tiny" if USE_TINY else "applegl"
+          NFRAMES = int(os.environ.get("NFRAMES", "220"))
+          if USE_TINY:
+            loadPrcFileData("", "load-display p3tinydisplay")   # the fast software rasterizer
           import metadrive.engine.core.engine_core as _ec
           _ec.is_mac = lambda: False
           _ec.init = lambda *a, **k: None
@@ -99,7 +103,7 @@ jobs:
           cam.get_cam().setPos(Vec3(0,0,1.22)); cam.get_cam().setHpr(Vec3(0,0,0))
 
           frames = []
-          for i in range(220):
+          for i in range(NFRAMES):
             v = env.vehicle
             # simple lane-centering so the clip actually follows the road
             steer = 0.0
@@ -125,12 +129,20 @@ jobs:
           os.makedirs("out", exist_ok=True)
           # stills first (so we keep something even if mp4 encoding fails)
           for idx in (30, 90, 150, 210):
-            if idx < len(frames): imageio.imwrite(f"out/frame_{idx:03d}.png", frames[idx])
-          imageio.mimwrite("out/metadrive_tinydisplay.mp4", frames, fps=20, quality=7)
-          print("wrote out/metadrive_tinydisplay.mp4", flush=True)
+            if idx < len(frames): imageio.imwrite(f"out/{TAG}_frame_{idx:03d}.png", frames[idx])
+          if USE_TINY:
+            imageio.mimwrite(f"out/metadrive_{TAG}.mp4", frames, fps=20, quality=7)
+            print(f"wrote out/metadrive_{TAG}.mp4", flush=True)
           PY
 
-      - name: Render clip
+      - name: Render clip (p3tinydisplay)
+        run: python3 render_video.py
+
+      - name: Render stills (Apple Software GL — correct but slow, for quality compare)
+        continue-on-error: true
+        env:
+          TINYDISPLAY: "0"
+          NFRAMES: "60"
         run: python3 render_video.py
 
       - name: Upload video artifact
