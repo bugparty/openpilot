@@ -123,22 +123,25 @@ jobs:
           cam.get_cam().reparentTo(env.vehicle.origin)
           cam.get_cam().setPos(Vec3(0,0,1.22)); cam.get_cam().setHpr(Vec3(0,0,0))
 
-          for _ in range(10):  # warmup
+          import statistics
+          def med_ms(fn, N):
+            fn(); fn()  # extra warmup (JIT/shader compile)
+            ts = []
+            for _ in range(N):
+              t = time.perf_counter(); fn(); ts.append((time.perf_counter()-t)*1e3)
+            return statistics.median(ts), min(ts), max(ts)
+
+          for _ in range(20):  # generous warmup
             env.step([0,0.0]); cam.perceive(to_float=False)
 
-          # perceive-only (pure render cost)
-          N = 100
-          t0 = time.perf_counter()
-          for _ in range(N): img = cam.perceive(to_float=False)
-          dt = time.perf_counter()-t0
-          print(f"RENDER perceive-only: {N/dt:6.1f} fps  ({dt/N*1e3:.1f} ms/frame)", flush=True)
-
-          # full loop (step + perceive), like the bridge
-          t0 = time.perf_counter()
-          for _ in range(N): env.step([0,0.0]); img = cam.perceive(to_float=False)
-          dt = time.perf_counter()-t0
-          print(f"RENDER step+perceive: {N/dt:6.1f} fps  ({dt/N*1e3:.1f} ms/frame)   need >= 20 fps", flush=True)
-          print("img shape:", np.asarray(img).shape, flush=True)
+          N = 60
+          p_med, p_min, p_max = med_ms(lambda: cam.perceive(to_float=False), N)
+          print(f"perceive-only : median {p_med:6.1f} ms  (min {p_min:.1f} / max {p_max:.1f})  -> {1000/p_med:.1f} fps", flush=True)
+          s_med, s_min, s_max = med_ms(lambda: env.step([0,0.0]), N)
+          print(f"step-only     : median {s_med:6.1f} ms  (min {s_min:.1f} / max {s_max:.1f})  -> {1000/s_med:.1f} fps", flush=True)
+          c_med, c_min, c_max = med_ms(lambda: (env.step([0,0.0]), cam.perceive(to_float=False)), N)
+          print(f"step+perceive : median {c_med:6.1f} ms  (min {c_min:.1f} / max {c_max:.1f})  -> {1000/c_med:.1f} fps   need >= 20", flush=True)
+          print("img shape:", np.asarray(cam.perceive(to_float=False)).shape, flush=True)
           PY
 
       - name: Bare Panda3D offscreen GL probe (decisive — window-less buffer?)
