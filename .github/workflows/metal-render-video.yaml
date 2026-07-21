@@ -1,0 +1,138 @@
+name: metal-render-video
+
+# Quality check for issue #30693: render a short driving-POV clip with the
+# p3tinydisplay path on the free macos-14 runner, so we can eyeball whether the
+# frames modeld would consume look like a real road scene. Uploads an mp4 artifact.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ metal-probe ]
+
+jobs:
+  video:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install MetaDrive + video encoder
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy imageio imageio-ffmpeg "git+https://github.com/commaai/metadrive.git@minimal"
+
+      - name: Write render-video script
+        run: |
+          cat > render_video.py <<'PY'
+          import os, time, numpy as np
+          from panda3d.core import loadPrcFileData
+          loadPrcFileData("", "load-display p3tinydisplay")   # the fast software rasterizer
+          import metadrive.engine.core.engine_core as _ec
+          _ec.is_mac = lambda: False
+          _ec.init = lambda *a, **k: None
+          class _NoPSSM:
+            def __init__(self, *a, **k): pass
+            def __getattr__(self, n): return lambda *a, **k: None
+          _ec.PSSM = _NoPSSM
+          from direct.showbase import ShowBase as _SB
+          from panda3d.core import FrameBufferProperties as _FBP
+          _orig_doopen = _SB.ShowBase._doOpenWindow
+          def _doopen(self, *a, **kw):
+            if kw.get("fbprops") is None:
+              fb = _FBP(); fb.setRgbColor(True); fb.setRgbaBits(8,8,8,8); fb.setDepthBits(24)
+              kw["fbprops"] = fb
+            return _orig_doopen(self, *a, **kw)
+          _SB.ShowBase._doOpenWindow = _doopen
+          import metadrive.obs.image_obs as _iobs
+          _iobs.ImageObservation.observe = lambda self, *a, **k: self.state
+
+          from metadrive.component.map.pg_map import MapGenerateMethod
+          from metadrive.envs.metadrive_env import MetaDriveEnv
+          from metadrive.component.sensors.rgb_camera import RGBCamera
+          from panda3d.core import Texture, GraphicsOutput, Vec3
+
+          W, H = 1928, 1208
+
+          class CopyRamRGBCamera(RGBCamera):
+            def _setup_effect(self):
+              from metadrive.constants import Semantics, CameraTagStateKey
+              from metadrive.engine.core.terrain import Terrain
+              cam = self.get_cam().node()
+              cam.setTagStateKey(CameraTagStateKey.RGB)
+              cam.setTagState(Semantics.TERRAIN.label,
+                              Terrain.make_render_state(self.engine, "terrain.vert.glsl", "terrain.frag.glsl"))
+            def __init__(self, *a, **k):
+              super().__init__(*a, **k)
+              self.cpu_texture = Texture()
+              self.buffer.addRenderTexture(self.cpu_texture, GraphicsOutput.RTMCopyRam)
+            def get_rgb_array_cpu(self):
+              t = self.cpu_texture
+              return np.frombuffer(t.getRamImageAs("RGB").getData(), dtype=np.uint8).reshape((t.getYSize(), t.getXSize(), 3))[::-1]
+
+          class RGBCameraRoad(CopyRamRGBCamera):
+            def __init__(self, *a, **k):
+              super().__init__(*a, **k); lens = self.get_lens(); lens.setFov(40); lens.setNear(0.1)
+
+          def straight(l): return {"id":"S","pre_block_socket_index":0,"length":l}
+          def curve(l,angle=45,d=0): return {"id":"C","pre_block_socket_index":0,"length":l,"radius":l,"angle":angle,"dir":d}
+          def create_map(ts=60):
+            cl=ts*2
+            return {"type":MapGenerateMethod.PG_MAP_FILE,"lane_num":2,"lane_width":4.5,
+                    "config":[None,straight(ts),curve(cl,90),straight(ts),curve(cl,90),straight(ts),curve(cl,90),straight(ts),curve(cl,90)]}
+
+          config = {
+            "use_render": False,
+            "vehicle_config": {"enable_reverse": False, "render_vehicle": False, "image_source": "rgb_road"},
+            "sensors": {"rgb_road": (RGBCameraRoad, W, H)},
+            "image_on_cuda": False, "image_observation": True, "interface_panel": [],
+            "out_of_route_done": False, "on_continuous_line_done": False, "crash_vehicle_done": False,
+            "crash_object_done": False, "arrive_dest_done": False, "traffic_density": 0.0,
+            "map_config": create_map(), "decision_repeat": 1, "physics_world_step_size": 5/100,
+            "preload_models": False, "show_logo": False, "anisotropic_filtering": False,
+          }
+          env = MetaDriveEnv(config)
+          env.reset()
+          cam = env.engine.sensors["rgb_road"]
+          cam.get_cam().reparentTo(env.vehicle.origin)
+          cam.get_cam().setPos(Vec3(0,0,1.22)); cam.get_cam().setHpr(Vec3(0,0,0))
+
+          frames = []
+          for i in range(220):
+            v = env.vehicle
+            # simple lane-centering so the clip actually follows the road
+            steer = 0.0
+            try:
+              lat = v.lane.local_coordinates(v.position)[1]
+              heading_err = v.heading_diff(v.lane) - 0.5
+              steer = float(np.clip(-lat*0.15 - heading_err*2.0, -0.4, 0.4))
+            except Exception:
+              steer = 0.0
+            _,_,term,_,_ = env.step([steer, 0.25])
+            img = np.asarray(cam.perceive(to_float=False))          # (H,W,3) uint8 RGB
+            frames.append(np.ascontiguousarray(img[::3, ::3]))       # downscale ~3x for file size
+            if term:
+              env.reset()
+              cam.get_cam().reparentTo(env.vehicle.origin)
+              cam.get_cam().setPos(Vec3(0,0,1.22)); cam.get_cam().setHpr(Vec3(0,0,0))
+
+          print(f"captured {len(frames)} frames, shape {frames[0].shape}, "
+                f"mean {np.mean(frames):.1f} std {np.std(frames):.1f}", flush=True)
+          import imageio
+          os.makedirs("out", exist_ok=True)
+          imageio.mimwrite("out/metadrive_tinydisplay.mp4", frames, fps=20, quality=7, macro_block_size=1)
+          # also a couple of stills
+          imageio.imwrite("out/frame_050.png", frames[50])
+          imageio.imwrite("out/frame_150.png", frames[150])
+          print("wrote out/metadrive_tinydisplay.mp4", flush=True)
+          PY
+
+      - name: Render clip
+        run: python3 render_video.py
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadrive-tinydisplay-clip
+          path: out/
+          if-no-files-found: error
