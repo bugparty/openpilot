@@ -38,15 +38,21 @@ jobs:
           # window fails on headless Cocoa because it requests multisample. Override AFTER
           # import so our values win (PRC = last-loaded-wins).
           import metadrive.engine.core.engine_core as _ec
-          _ec.is_mac = lambda: False           # defeat its offscreen->onscreen override
-          _ec._suppress_warning = lambda: None  # keep display notify so we SEE why makeOutput fails
-          # MetaDrive forces "gl-version 4 1" (core) for mac at import; headless Cocoa
-          # pbuffers can't find a core-profile pixel format. Override to 3.3 (still shader
-          # capable) — loaded after import so it wins.
-          for _l in ["framebuffer-multisample 0", "multisamples 1", "framebuffer-stencil 0",
-                     "back-buffers 0", "gl-version 3 3",
-                     "notify-level-display spam"]:
-            loadPrcFileData("", _l)
+          _ec.is_mac = lambda: False           # keep mode == offscreen (=> BFRefuseWindow path)
+
+          # ROOT CAUSE: ShowBase._doOpenWindow uses fbprops=FrameBufferProperties.getDefault(),
+          # which the headless Cocoa first-buffer can't match ("no usable pixel format").
+          # Our bare probe proved a MINIMAL fbprops (rgba8+depth) opens fine. Inject it.
+          from direct.showbase import ShowBase as _SB
+          from panda3d.core import FrameBufferProperties as _FBP
+          _orig_doopen = _SB.ShowBase._doOpenWindow
+          def _doopen(self, *a, **kw):
+            if kw.get("fbprops") is None:
+              fb = _FBP(); fb.setRgbColor(True); fb.setRgbaBits(8,8,8,8); fb.setDepthBits(24)
+              kw["fbprops"] = fb
+            return _orig_doopen(self, *a, **kw)
+          _SB.ShowBase._doOpenWindow = _doopen
+
           from metadrive.component.map.pg_map import MapGenerateMethod
           from metadrive.envs.metadrive_env import MetaDriveEnv
           from metadrive.component.sensors.rgb_camera import RGBCamera
