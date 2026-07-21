@@ -111,7 +111,9 @@ jobs:
               steer = 0.0
             _,_,term,_,_ = env.step([steer, 0.25])
             img = np.asarray(cam.perceive(to_float=False))          # (H,W,3) uint8 RGB
-            frames.append(np.ascontiguousarray(img[::3, ::3]))       # downscale ~3x for file size
+            small = img[::2, ::2]                                    # ~2x downscale (even dims)
+            small = small[:small.shape[0]//2*2, :small.shape[1]//2*2]
+            frames.append(np.ascontiguousarray(small))
             if term:
               env.reset()
               cam.get_cam().reparentTo(env.vehicle.origin)
@@ -121,10 +123,10 @@ jobs:
                 f"mean {np.mean(frames):.1f} std {np.std(frames):.1f}", flush=True)
           import imageio
           os.makedirs("out", exist_ok=True)
-          imageio.mimwrite("out/metadrive_tinydisplay.mp4", frames, fps=20, quality=7, macro_block_size=1)
-          # also a couple of stills
-          imageio.imwrite("out/frame_050.png", frames[50])
-          imageio.imwrite("out/frame_150.png", frames[150])
+          # stills first (so we keep something even if mp4 encoding fails)
+          for idx in (30, 90, 150, 210):
+            if idx < len(frames): imageio.imwrite(f"out/frame_{idx:03d}.png", frames[idx])
+          imageio.mimwrite("out/metadrive_tinydisplay.mp4", frames, fps=20, quality=7)
           print("wrote out/metadrive_tinydisplay.mp4", flush=True)
           PY
 
