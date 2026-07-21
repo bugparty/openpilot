@@ -117,6 +117,11 @@ jobs:
             "preload_models": False, "show_logo": False, "anisotropic_filtering": False,
           }
 
+          # Replicate the bridge: disable MetaDrive's built-in image observation stack
+          # (np.roll etc.) — the bridge reads the camera directly and patches this out.
+          import metadrive.obs.image_obs as _iobs
+          _iobs.ImageObservation.observe = lambda self, *a, **k: self.state
+
           config.pop("arrive_dest_done", None)  # bridge pops this before constructing env
           print("creating MetaDriveEnv...", flush=True)
           t0 = time.perf_counter()
@@ -157,7 +162,8 @@ jobs:
           ge = env.engine.graphicsEngine
           r_med, r_min, r_max = med_ms(lambda: ge.render_frame(), N)
           print(f"renderFrame   : median {r_med:6.1f} ms  (min {r_min:.1f} / max {r_max:.1f})  -> {1000/r_med:.1f} fps   <- TRUE per-frame", flush=True)
-          print("img shape:", np.asarray(cam.perceive(to_float=False)).shape, flush=True)
+          _im = np.asarray(cam.perceive(to_float=False))
+          print(f"img shape: {_im.shape}  mean={_im.mean():.1f} std={_im.std():.1f} min={_im.min()} max={_im.max()}  (std>0 => real scene, not blank)", flush=True)
 
           # ---- profile where env.step's ~386 ms actually goes ----
           import cProfile, pstats, io as _io
