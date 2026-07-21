@@ -71,6 +71,7 @@ jobs:
             "preload_models": False, "show_logo": False, "anisotropic_filtering": False,
           }
 
+          config.pop("arrive_dest_done", None)  # bridge pops this before constructing env
           print("creating MetaDriveEnv...", flush=True)
           t0 = time.perf_counter()
           env = MetaDriveEnv(config)
