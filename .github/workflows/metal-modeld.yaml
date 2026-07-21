@@ -54,29 +54,31 @@ jobs:
           echo "== available tinygrad devices =="
           python -c "import sys; sys.path.insert(0,'tinygrad_repo'); from tinygrad import Device; print(Device.get_available_devices())"
 
+      - name: Write runner (stubs usbgpu_link to skip the cereal/capnp import chain)
+        run: |
+          cat > run_modeld.py <<'PY'
+          import os, sys, types, runpy
+          # wait_usbgpu_link is never called for METAL/CPU; stub the module so its
+          # import chain (swaglog -> hardware -> cereal -> capnp) isn't pulled in.
+          stub = types.ModuleType('openpilot.selfdrive.modeld.usbgpu_link')
+          stub.wait_usbgpu_link = lambda *a, **k: None
+          sys.modules['openpilot.selfdrive.modeld.usbgpu_link'] = stub
+          sys.argv = ['compile_modeld.py',
+                      '--model-size', '512x256',
+                      '--camera-resolutions', '1928x1208',
+                      '--onnx', os.environ['ONNX'],
+                      '--output', os.environ.get('OUT', '/tmp/out.pkl'),
+                      '--frame-skip', '4']
+          runpy.run_path('openpilot/selfdrive/modeld/compile_modeld.py', run_name='__main__')
+          PY
+
       - name: modeld inference — METAL
         continue-on-error: true
-        env:
-          DEV: METAL
-          WARP_DEV: METAL
-        run: |
-          python3 openpilot/selfdrive/modeld/compile_modeld.py \
-            --model-size 512x256 \
-            --camera-resolutions 1928x1208 \
-            --onnx "$ONNX" \
-            --output /tmp/driving_metal.pkl \
-            --frame-skip 4
+        env: { DEV: METAL, WARP_DEV: METAL, OUT: /tmp/driving_metal.pkl }
+        run: python3 run_modeld.py
 
       - name: modeld inference — CPU baseline
         continue-on-error: true
         timeout-minutes: 15
-        env:
-          DEV: CPU
-          WARP_DEV: CPU
-        run: |
-          python3 openpilot/selfdrive/modeld/compile_modeld.py \
-            --model-size 512x256 \
-            --camera-resolutions 1928x1208 \
-            --onnx "$ONNX" \
-            --output /tmp/driving_cpu.pkl \
-            --frame-skip 4
+        env: { DEV: CPU, WARP_DEV: CPU, OUT: /tmp/driving_cpu.pkl }
+        run: python3 run_modeld.py
