@@ -167,39 +167,53 @@ jobs:
           print(s.getvalue(), flush=True)
           PY
 
-      - name: Bare Panda3D offscreen GL probe (decisive — window-less buffer?)
+      - name: HARDWARE vs SOFTWARE OpenGL probe (is hw GL really unavailable headless?)
         continue-on-error: true
         run: |
-          cat > gl_probe.py <<'PY'
-          import os
-          # DIAGNOSTIC: if AFTER_MD=1, import metadrive first so all its class-body PRC
-          # (gl-version 4 1, multisamples, textures-power-2, model-cache, ...) is loaded,
-          # THEN run the same windowless makeOutput that succeeded standalone. This isolates
-          # whether MetaDrive's PRC breaks the working headless path vs how ShowBase calls it.
-          if os.environ.get("AFTER_MD"):
-            import metadrive.engine.core.engine_core  # noqa: loads its PRC
-            print("[imported metadrive engine_core PRC]", flush=True)
+          cat > gl_hw.py <<'PY'
           from panda3d.core import (GraphicsPipeSelection, GraphicsEngine, FrameBufferProperties,
-                                    WindowProperties, GraphicsPipe, Texture, GraphicsOutput)
+                                    WindowProperties, GraphicsPipe, loadPrcFileData)
+          # try a windowed offscreen path too
+          import os
+          for _l in os.environ.get("EXTRA_PRC","").split(";"):
+            if _l.strip(): loadPrcFileData("", _l.strip())
           sel = GraphicsPipeSelection.getGlobalPtr()
-          pipe = sel.makeDefaultPipe()
-          print("default pipe:", pipe.getInterfaceName() if pipe else None, flush=True)
           engine = GraphicsEngine.getGlobalPtr()
-          fb = FrameBufferProperties()
-          fb.setRgbColor(True); fb.setRgbaBits(8,8,8,8); fb.setDepthBits(16)
-          wp = WindowProperties.size(256, 256)
-          # BFRefuseWindow => never open a host window, offscreen buffer only
-          buf = engine.makeOutput(pipe, "offbuf", 0, fb, wp, GraphicsPipe.BFRefuseWindow)
-          print("offscreen buffer:", buf, flush=True)
-          if buf is None:
-            print("RESULT: HARD BLOCK — cannot create window-less GL buffer on this runner", flush=True)
-          else:
-            tex = Texture(); buf.addRenderTexture(tex, GraphicsOutput.RTMCopyRam)
-            engine.renderFrame(); engine.renderFrame()
-            print("RESULT: OK — headless GL buffer works, gsg =", buf.getGsg(), flush=True)
+          pipe = sel.makeDefaultPipe()
+
+          def probe(label, force_hw=False, force_sw=False, msaa=0, wintype="buffer"):
+            fb = FrameBufferProperties()
+            fb.setRgbColor(True); fb.setRgbaBits(8,8,8,8); fb.setDepthBits(24)
+            if force_hw: fb.setForceHardware(True)
+            if force_sw: fb.setForceSoftware(True)
+            if msaa: fb.setMultisamples(msaa)
+            wp = WindowProperties.size(256, 256)
+            flags = GraphicsPipe.BFRefuseWindow if wintype=="buffer" else GraphicsPipe.BFRequireWindow
+            flags |= GraphicsPipe.BFFbPropsOptional
+            buf = engine.makeOutput(pipe, label, 0, fb, wp, flags)
+            engine.renderFrame()
+            if buf is None:
+              print(f"  {label:22} -> None (not available)", flush=True); return
+            gsg = buf.getGsg()
+            if gsg is None:
+              print(f"  {label:22} -> buffer but NO gsg", flush=True); return
+            hw = "?"
+            try: hw = "HARDWARE" if gsg.getDriverRenderer() and "Software" not in gsg.getDriverRenderer() else "software"
+            except Exception: pass
+            print(f"  {label:22} -> {gsg.getDriverRenderer()}  [{hw}]", flush=True)
+            try: engine.removeWindow(buf)
+            except Exception: pass
+
+          print("pipe:", pipe.getInterfaceName() if pipe else None, flush=True)
+          probe("default")
+          probe("force_hardware", force_hw=True)
+          probe("force_hw+msaa4", force_hw=True, msaa=4)
+          probe("force_software", force_sw=True)
+          probe("require_window", wintype="window")
+          probe("require_window_hw", force_hw=True, wintype="window")
           PY
-          echo "=== standalone (no metadrive) ==="; python3 gl_probe.py
-          echo "=== after importing metadrive PRC ==="; AFTER_MD=1 python3 gl_probe.py
+          echo "=== default env ==="; python3 gl_hw.py
+          echo "=== with gl-version 4 1 + multisamples ==="; EXTRA_PRC="gl-version 4 1;framebuffer-multisample 1;multisamples 4" python3 gl_hw.py
 
       - name: Run render benchmark (MetaDrive)
         continue-on-error: true
