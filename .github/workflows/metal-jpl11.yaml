@@ -1,0 +1,153 @@
+name: metal-jpl11
+
+# Proper quality+speed test for issue #30693: run JPL11's PR #38285 CI render
+# patches (flat terrain card + simplified GLSL shader, known-correct on Linux
+# LLVMpipe) on the free macos-14 runner's Apple Software GL, combined with the
+# headless-macOS window fixes we found. Answers: does the simplified-shader path
+# render a CORRECT road scene at ~20 fps on Apple SW GL? Uploads mp4 + stills.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ metal-probe ]
+
+jobs:
+  jpl:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install MetaDrive + encoders
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy imageio imageio-ffmpeg "git+https://github.com/commaai/metadrive.git@minimal"
+
+      - name: Fetch JPL11 PR #38285 render files
+        run: |
+          mkdir -p jpl
+          B=https://raw.githubusercontent.com/commaai/openpilot/refs/pull/38285/head/openpilot/tools/sim/bridge/metadrive
+          for f in ci_render_patches.py metadrive_common.py terrain_card.vert.glsl terrain_ci.frag.glsl; do
+            curl -sL "$B/$f" -o "jpl/$f"
+          done
+          ls -la jpl/
+
+      - name: Write macOS render driver
+        run: |
+          cat > jpl_render.py <<'PY'
+          import os, sys, time, numpy as np
+          sys.path.insert(0, os.path.join(os.getcwd(), "jpl"))
+          # JPL11's render variant: simplified shader + flat terrain card + half res
+          os.environ.update({"METADRIVE_SIMPLE_RENDER":"1", "METADRIVE_NO_MSAA":"1",
+                             "METADRIVE_FLAT_TERRAIN_CARD":"1", "METADRIVE_RENDER_SCALE":"0.5"})
+
+          from panda3d.core import loadPrcFileData
+          # ---- headless-macOS window fixes (our findings) ----
+          import metadrive.engine.core.engine_core as _ec
+          _ec.is_mac = lambda: False
+          import metadrive.third_party.simplepbr as _spbr
+          _spbr.Pipeline._setup_tonemapping = lambda self: setattr(self, "tonemap_quad", None)
+          _orig_spbr_init = _spbr.init
+          _ec.init = lambda **kw: _orig_spbr_init(**{**kw, "use_330": True})
+          from direct.showbase import ShowBase as _SB
+          from panda3d.core import FrameBufferProperties as _FBP
+          _od = _SB.ShowBase._doOpenWindow
+          def _doopen(self, *a, **kw):
+            if kw.get("fbprops") is None:
+              fb = _FBP(); fb.setRgbColor(True); fb.setRgbaBits(8,8,8,8); fb.setDepthBits(24); kw["fbprops"] = fb
+            return _od(self, *a, **kw)
+          _SB.ShowBase._doOpenWindow = _doopen
+          import metadrive.obs.image_obs as _iobs
+          _iobs.ImageObservation.observe = lambda self, *a, **k: self.state
+
+          # ---- JPL11's render patches (flat terrain card + simplified shader) ----
+          import ci_render_patches
+          ci_render_patches.apply_ci_render_patches()
+          # PSSM shadow buffer can't be created headless; skip it (card shader needs no shadows)
+          from metadrive.engine.core.pssm import PSSM
+          def _pssm_skip(self):
+            try:
+              self.use_pssm = False
+              self.engine.render.set_shader_inputs(use_pssm=False)
+            except Exception as e:
+              print("pssm skip note:", e, flush=True)
+          PSSM.init = _pssm_skip
+
+          from metadrive.component.map.pg_map import MapGenerateMethod
+          from metadrive.envs.metadrive_env import MetaDriveEnv
+          from metadrive_common import RGBCameraRoad
+          from panda3d.core import Vec3
+
+          W, H = 1928, 1208
+          scale = float(os.environ["METADRIVE_RENDER_SCALE"]); rw, rh = round(W*scale), round(H*scale)
+          def straight(l): return {"id":"S","pre_block_socket_index":0,"length":l}
+          def curve(l,a=45,d=0): return {"id":"C","pre_block_socket_index":0,"length":l,"radius":l,"angle":a,"dir":d}
+          ts=60
+          config = dict(use_render=False,
+            vehicle_config=dict(enable_reverse=False, render_vehicle=False, image_source="rgb_road"),
+            sensors={"rgb_road": (RGBCameraRoad, rw, rh)}, image_on_cuda=False, image_observation=True,
+            interface_panel=[], out_of_route_done=False, on_continuous_line_done=False,
+            crash_vehicle_done=False, crash_object_done=False, traffic_density=0.0,
+            map_config=dict(type=MapGenerateMethod.PG_MAP_FILE, lane_num=2, lane_width=4.5,
+              config=[None,straight(ts),curve(ts*2,90),straight(ts),curve(ts*2,90),straight(ts),curve(ts*2,90),straight(ts),curve(ts*2,90)]),
+            decision_repeat=1, physics_world_step_size=0.05, preload_models=False, show_logo=False,
+            anisotropic_filtering=False, show_terrain=True)
+
+          env = MetaDriveEnv(config); env.reset()
+          cam = env.engine.sensors["rgb_road"]
+          agent = getattr(env, "agent", None) or env.vehicle
+
+          def setcam():
+            c = cam.get_cam(); c.reparentTo(agent.origin); c.setPos(Vec3(0,0,1.22)); c.setHpr(Vec3(0,0,0))
+          setcam()
+
+          def grab():
+            img = cam.perceive(to_float=False)
+            if not isinstance(img, np.ndarray): img = img.get()
+            return np.ascontiguousarray(img)
+
+          for _ in range(20):  # warmup
+            env.step([0,0.2]); grab()
+
+          # timed
+          N=100; t0=time.monotonic()
+          for _ in range(N): env.step([0,0.2]); grab()
+          fps = N/(time.monotonic()-t0)
+
+          # capture a driving clip
+          frames=[]
+          for i in range(160):
+            v = env.vehicle
+            steer=0.0
+            try:
+              lat = v.lane.local_coordinates(v.position)[1]
+              steer = float(np.clip(-lat*0.15 - (v.heading_diff(v.lane)-0.5)*2.0, -0.4, 0.4))
+            except Exception: pass
+            _,_,term,_,_ = env.step([steer,0.2]); setcam()
+            im = grab()
+            im = im[:im.shape[0]//2*2, :im.shape[1]//2*2]
+            frames.append(im)
+            if term:
+              env.reset(); setcam()
+
+          arr=np.asarray(frames)
+          print(f"FPS(step+grab)={fps:.1f}  frames={len(frames)} shape={frames[0].shape} mean={arr.mean():.1f} std={arr.std():.1f}", flush=True)
+          import imageio
+          os.makedirs("out", exist_ok=True)
+          st=max(1,len(frames)//8)
+          for idx in range(0,len(frames),st): imageio.imwrite(f"out/jpl_frame_{idx:03d}.png", frames[idx])
+          try:
+            imageio.mimwrite("out/metadrive_jpl11.mp4", frames, fps=20, quality=7); print("wrote mp4", flush=True)
+          except Exception as e: print("mp4 fail:", e, flush=True)
+          PY
+
+      - name: Render (JPL11 simplified shader on Apple SW GL)
+        run: python3 jpl_render.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadrive-jpl11-clip
+          path: out/
+          if-no-files-found: error
