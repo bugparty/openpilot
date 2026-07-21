@@ -32,6 +32,14 @@ jobs:
         run: |
           cat > render_bench.py <<'PY'
           import time, numpy as np
+          # Request the MINIMAL framebuffer (rgba8 + depth only). The bare-buffer probe
+          # succeeded with these; ShowBase's offscreen main window likely fails on Cocoa
+          # because it asks for multisample/stencil/srgb the headless path rejects.
+          from panda3d.core import loadPrcFileData
+          for _l in ["framebuffer-multisample #f", "framebuffer-stencil #f",
+                     "framebuffer-srgb #f", "depth-bits 24", "back-buffers 0",
+                     "gl-force-fbo-color #f", "notify-level-display debug"]:
+            loadPrcFileData("", _l)
           # MetaDrive hardcodes "macOS can't do offscreen" and forces onscreen -> needs a
           # window -> fails headless. We proved headless offscreen GL works, so defeat it.
           import metadrive.engine.core.engine_core as _ec
