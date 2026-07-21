@@ -167,6 +167,44 @@ jobs:
           print(s.getvalue(), flush=True)
           PY
 
+      - name: Enumerate ALL Panda3D display backends / pipes
+        continue-on-error: true
+        run: |
+          cat > enum_backends.py <<'PY'
+          from panda3d.core import (GraphicsPipeSelection, GraphicsEngine, FrameBufferProperties,
+                                    WindowProperties, GraphicsPipe)
+          sel = GraphicsPipeSelection.getGlobalPtr()
+          sel.load_aux_modules()                 # try to load every available display module
+          n = sel.get_num_pipe_types()
+          print(f"# Panda3D knows {n} pipe type(s):", flush=True)
+          engine = GraphicsEngine.getGlobalPtr()
+          for i in range(n):
+            t = sel.get_pipe_type(i)
+            name = t.get_name()
+            try:
+              pipe = sel.make_pipe(t)
+            except Exception as e:
+              print(f"  - {name:24} make_pipe FAILED: {e}", flush=True); continue
+            if pipe is None:
+              print(f"  - {name:24} make_pipe -> None", flush=True); continue
+            fb = FrameBufferProperties(); fb.set_rgb_color(True); fb.set_rgba_bits(8,8,8,8); fb.set_depth_bits(24)
+            wp = WindowProperties.size(128,128)
+            buf = engine.make_output(pipe, "b", 0, fb, wp, GraphicsPipe.BFRefuseWindow)
+            engine.render_frame()
+            if buf is None:
+              print(f"  - {name:24} interface={pipe.get_interface_name():10} buffer=None", flush=True); continue
+            gsg = buf.get_gsg()
+            r = gsg.get_driver_renderer() if gsg else "no-gsg"
+            print(f"  - {name:24} interface={pipe.get_interface_name():10} renderer={r}", flush=True)
+            try: engine.remove_window(buf)
+            except Exception: pass
+          PY
+          echo "=== default modules ==="; python3 enum_backends.py
+          echo "=== force p3tinydisplay (pure software raster) ==="; python3 -c "from panda3d.core import loadPrcFileData; loadPrcFileData('','load-display p3tinydisplay')" 2>/dev/null; PANDA_PRC_DIR= python3 -c "
+          from panda3d.core import loadPrcFileData
+          loadPrcFileData('', 'load-display p3tinydisplay')
+          import runpy; runpy.run_path('enum_backends.py', run_name='__main__')" || true
+
       - name: HARDWARE vs SOFTWARE OpenGL probe (is hw GL really unavailable headless?)
         continue-on-error: true
         run: |
