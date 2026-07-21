@@ -100,6 +100,31 @@ jobs:
           print("img shape:", np.asarray(img).shape, flush=True)
           PY
 
-      - name: Run render benchmark
+      - name: Bare Panda3D offscreen GL probe (decisive — window-less buffer?)
+        continue-on-error: true
+        run: |
+          cat > gl_probe.py <<'PY'
+          from panda3d.core import (GraphicsPipeSelection, GraphicsEngine, FrameBufferProperties,
+                                    WindowProperties, GraphicsPipe, Texture, GraphicsOutput)
+          sel = GraphicsPipeSelection.getGlobalPtr()
+          pipe = sel.makeDefaultPipe()
+          print("default pipe:", pipe.getInterfaceName() if pipe else None, flush=True)
+          engine = GraphicsEngine.getGlobalPtr()
+          fb = FrameBufferProperties()
+          fb.setRgbColor(True); fb.setRgbaBits(8,8,8,8); fb.setDepthBits(16)
+          wp = WindowProperties.size(256, 256)
+          # BFRefuseWindow => never open a host window, offscreen buffer only
+          buf = engine.makeOutput(pipe, "offbuf", 0, fb, wp, GraphicsPipe.BFRefuseWindow)
+          print("offscreen buffer:", buf, flush=True)
+          if buf is None:
+            print("RESULT: HARD BLOCK — cannot create window-less GL buffer on this runner", flush=True)
+          else:
+            tex = Texture(); buf.addRenderTexture(tex, GraphicsOutput.RTMCopyRam)
+            engine.renderFrame(); engine.renderFrame()
+            print("RESULT: OK — headless GL buffer works, gsg =", buf.getGsg(), flush=True)
+          PY
+          python3 gl_probe.py
+
+      - name: Run render benchmark (MetaDrive)
         continue-on-error: true
         run: python3 render_bench.py
