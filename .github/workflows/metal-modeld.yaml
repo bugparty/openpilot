@@ -1,0 +1,71 @@
+name: metal-modeld
+
+# Decisive experiment for issue #30693: how fast does the REAL openpilot driving
+# model run on the FREE virtualized macos-14 (M1) runner via tinygrad's Metal
+# backend? modeld needs ~20 Hz (<=50 ms/frame). This runs openpilot's own
+# compile_modeld.py (exact CI path) which JIT-captures the model and prints
+# per-frame "total ms". METAL vs CPU baseline.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ metal-probe ]
+
+jobs:
+  modeld:
+    runs-on: macos-14   # free Apple Silicon (M1) runner for public repos
+    timeout-minutes: 40
+    env:
+      # openpilot pkg is at repo root; use the VENDORED tinygrad (submodule),
+      # not pip — this is the exact tinygrad that compiled the onnx.
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tinygrad_repo
+      ONNX: openpilot/selfdrive/modeld/models/driving_supercombo.onnx
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive   # need tinygrad_repo
+          lfs: true               # need the real .onnx, not the LFS pointer
+
+      - name: Confirm onnx is real (not an LFS pointer)
+        run: |
+          ls -la "$ONNX"
+          sz=$(stat -f%z "$ONNX")
+          echo "onnx size = $sz bytes"
+          if [ "$sz" -lt 1000000 ]; then echo "::error::onnx is still an LFS pointer"; exit 1; fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps (vendored tinygrad needs only these)
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy zstandard pyzmq
+          echo "== available tinygrad devices =="
+          python -c "import sys; sys.path.insert(0,'tinygrad_repo'); from tinygrad import Device; print(Device.get_available_devices())"
+
+      - name: modeld inference — METAL
+        continue-on-error: true
+        env:
+          DEV: METAL
+          WARP_DEV: METAL
+        run: |
+          python3 openpilot/selfdrive/modeld/compile_modeld.py \
+            --model-size 512x256 \
+            --camera-resolutions 1928x1208 \
+            --onnx "$ONNX" \
+            --output /tmp/driving_metal.pkl \
+            --frame-skip 4
+
+      - name: modeld inference — CPU baseline
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          DEV: CPU
+          WARP_DEV: CPU
+        run: |
+          python3 openpilot/selfdrive/modeld/compile_modeld.py \
+            --model-size 512x256 \
+            --camera-resolutions 1928x1208 \
+            --onnx "$ONNX" \
+            --output /tmp/driving_cpu.pkl \
+            --frame-skip 4
