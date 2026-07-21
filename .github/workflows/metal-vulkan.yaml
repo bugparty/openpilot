@@ -1,0 +1,42 @@
+name: metal-vulkan
+
+# Path B for issue #30693: is a HARDWARE Vulkan device reachable on the free
+# macos-14 runner via MoltenVK (Vulkan-over-Metal)? If yes, Zink (GL-over-Vulkan)
+# could give Panda3D hardware-accelerated GL WITHOUT a Metal backend rewrite.
+# We know Metal *compute* works (modeld); this checks if Metal *rendering* is
+# reachable through the Vulkan stack.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ metal-probe ]
+
+jobs:
+  vulkan:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - name: Install MoltenVK + vulkan-tools
+        run: |
+          brew update >/dev/null 2>&1 || true
+          brew install molten-vk vulkan-tools || brew install molten-vk vulkan-tools
+
+      - name: Locate MoltenVK ICD
+        id: icd
+        run: |
+          PREFIX=$(brew --prefix)
+          ICD=$(find "$PREFIX" -name "MoltenVK_icd.json" 2>/dev/null | head -1)
+          echo "ICD=$ICD"
+          echo "icd=$ICD" >> "$GITHUB_OUTPUT"
+          find "$PREFIX" -iname "*MoltenVK*" 2>/dev/null | head -20
+
+      - name: vulkaninfo — is there a HARDWARE Vulkan device?
+        continue-on-error: true
+        env:
+          VK_ICD_FILENAMES: ${{ steps.icd.outputs.icd }}
+          VK_DRIVER_FILES: ${{ steps.icd.outputs.icd }}
+        run: |
+          echo "VK_ICD_FILENAMES=$VK_ICD_FILENAMES"
+          echo "=== vulkaninfo --summary ==="
+          vulkaninfo --summary 2>&1 | sed -n '1,80p' || true
+          echo "=== deviceType / deviceName / driverName ==="
+          vulkaninfo 2>&1 | grep -iE "deviceName|deviceType|driverName|driverInfo|apiVersion" | head -30 || true
