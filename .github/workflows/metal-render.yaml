@@ -43,6 +43,12 @@ jobs:
           # headless (1x1 disabled main window) -> crashes. pbrpipe is never used later in
           # engine_core; camera sensors + terrain render independently. Skip it.
           _ec.init = lambda *a, **k: None
+          # PSSM shadow-map buffer also can't be created headless and pssm is never used
+          # later in engine_core. Stub it (terrain shadow input, if any, degrades gracefully).
+          class _NoPSSM:
+            def __init__(self, *a, **k): pass
+            def __getattr__(self, n): return lambda *a, **k: None
+          _ec.PSSM = _NoPSSM
 
           # ROOT CAUSE: ShowBase._doOpenWindow uses fbprops=FrameBufferProperties.getDefault(),
           # which the headless Cocoa first-buffer can't match ("no usable pixel format").
