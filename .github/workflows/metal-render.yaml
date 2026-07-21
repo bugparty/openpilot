@@ -119,6 +119,14 @@ jobs:
         continue-on-error: true
         run: |
           cat > gl_probe.py <<'PY'
+          import os
+          # DIAGNOSTIC: if AFTER_MD=1, import metadrive first so all its class-body PRC
+          # (gl-version 4 1, multisamples, textures-power-2, model-cache, ...) is loaded,
+          # THEN run the same windowless makeOutput that succeeded standalone. This isolates
+          # whether MetaDrive's PRC breaks the working headless path vs how ShowBase calls it.
+          if os.environ.get("AFTER_MD"):
+            import metadrive.engine.core.engine_core  # noqa: loads its PRC
+            print("[imported metadrive engine_core PRC]", flush=True)
           from panda3d.core import (GraphicsPipeSelection, GraphicsEngine, FrameBufferProperties,
                                     WindowProperties, GraphicsPipe, Texture, GraphicsOutput)
           sel = GraphicsPipeSelection.getGlobalPtr()
@@ -138,7 +146,8 @@ jobs:
             engine.renderFrame(); engine.renderFrame()
             print("RESULT: OK — headless GL buffer works, gsg =", buf.getGsg(), flush=True)
           PY
-          python3 gl_probe.py
+          echo "=== standalone (no metadrive) ==="; python3 gl_probe.py
+          echo "=== after importing metadrive PRC ==="; AFTER_MD=1 python3 gl_probe.py
 
       - name: Run render benchmark (MetaDrive)
         continue-on-error: true
