@@ -1,0 +1,94 @@
+name: metal-probe
+
+# Minimal experiment for issue #30693: does tinygrad's METAL backend actually
+# run compute (esp. a captured graph / TinyJit, which modeld uses) on the FREE
+# virtualized macos-14 runner? If eager works but TinyJit crashes, that confirms
+# "paravirtualized Metal graph is broken" and kills the macOS-GPU idea.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ metal-probe ]
+
+jobs:
+  probe:
+    runs-on: macos-14   # free Apple Silicon (M1) runner for public repos
+    timeout-minutes: 20
+    steps:
+      - name: System / GPU info
+        run: |
+          echo "== CPU =="; sysctl -n machdep.cpu.brand_string; sysctl hw.ncpu hw.memsize
+          echo "== GPU (look for 'Paravirtual') =="
+          system_profiler SPDisplaysDataType | head -40 || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tinygrad + numpy
+        run: |
+          python -m pip install --upgrade pip
+          pip install tinygrad numpy
+          python -c "import tinygrad, sys; print('tinygrad', tinygrad.__version__ if hasattr(tinygrad,'__version__') else '(no __version__)')"
+
+      - name: Write probe script
+        run: |
+          cat > probe.py <<'PY'
+          import os, time, sys
+          from tinygrad import Tensor, Device
+          from tinygrad.engine.jit import TinyJit
+
+          dev = Device.DEFAULT
+          print(f"### DEV env = {os.environ.get('DEV','(unset)')}  ->  Device.DEFAULT = {dev}", flush=True)
+
+          def sync():
+            try: Device[Device.DEFAULT].synchronize()
+            except Exception: pass
+
+          N = 1024
+          a = Tensor.rand(N, N).realize()
+          b = Tensor.rand(N, N).realize()
+          sync()
+
+          def bench(fn, label, iters=50):
+            try:
+              for _ in range(3): fn()          # warmup (TinyJit captures on 2nd+ call)
+              sync()
+              t0 = time.perf_counter()
+              for _ in range(iters): fn()
+              sync()
+              ms = (time.perf_counter() - t0) / iters * 1000
+              print(f"PASS  {label:<22} {ms:8.2f} ms/iter", flush=True)
+              return ms
+            except Exception as e:
+              print(f"FAIL  {label:<22} {type(e).__name__}: {e}", flush=True)
+              return None
+
+          # 1) eager matmul  2) the thing that matters: a captured graph via TinyJit
+          bench(lambda: (a @ b).realize(), "eager matmul")
+
+          @TinyJit
+          def jit_step(x, y): return (x @ y).realize()
+          bench(lambda: jit_step(a, b), "TinyJit matmul (graph)")
+
+          # tiny conv, closer to a vision model layer
+          try:
+            img = Tensor.rand(1, 3, 256, 256).realize()
+            w   = Tensor.rand(32, 3, 3, 3).realize()
+            @TinyJit
+            def jit_conv(x, k): return x.conv2d(k).relu().realize()
+            bench(lambda: jit_conv(img, w), "TinyJit conv2d")
+          except Exception as e:
+            print(f"FAIL  conv setup            {type(e).__name__}: {e}", flush=True)
+          PY
+
+      - name: Default device (auto-selected)
+        continue-on-error: true
+        run: python probe.py
+
+      - name: METAL backend
+        continue-on-error: true
+        run: DEV=METAL python probe.py
+
+      - name: CPU:LLVM baseline (what free CI uses today)
+        continue-on-error: true
+        run: DEV=CPU:LLVM python probe.py
