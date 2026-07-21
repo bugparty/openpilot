@@ -71,6 +71,16 @@ jobs:
           W, H = 1928, 1208  # tici camera res the model consumes
 
           class CopyRamRGBCamera(RGBCamera):
+            def _setup_effect(self):
+              # JPL11's slim override: keep terrain tag state, but SKIP the float16 HDR
+              # buffer + multisample + tonemap post-pass (FilterManager.render_scene_into
+              # returns None headless). Camera renders straight into the 8-bit buffer.
+              from metadrive.constants import Semantics, CameraTagStateKey
+              from metadrive.engine.core.terrain import Terrain
+              cam = self.get_cam().node()
+              cam.setTagStateKey(CameraTagStateKey.RGB)
+              cam.setTagState(Semantics.TERRAIN.label,
+                              Terrain.make_render_state(self.engine, "terrain.vert.glsl", "terrain.frag.glsl"))
             def __init__(self, *a, **k):
               super().__init__(*a, **k)
               self.cpu_texture = Texture()
