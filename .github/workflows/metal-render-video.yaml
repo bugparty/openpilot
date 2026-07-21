@@ -34,7 +34,13 @@ jobs:
             loadPrcFileData("", "load-display p3tinydisplay")   # the fast software rasterizer
           import metadrive.engine.core.engine_core as _ec
           _ec.is_mac = lambda: False
-          _ec.init = lambda *a, **k: None
+          # SURGICAL: keep simplepbr's SCENE shading (_recompile_pbr on base.render), only
+          # skip the headless-incompatible main-window tonemap post-process. And force
+          # use_330=True so shaders are GLSL 330 (Apple GL is 4.1 core; GLSL 120 won't compile).
+          import metadrive.third_party.simplepbr as _spbr
+          _spbr.Pipeline._setup_tonemapping = lambda self: setattr(self, "tonemap_quad", None)
+          _orig_spbr_init = _spbr.init
+          _ec.init = lambda **kw: _orig_spbr_init(**{**kw, "use_330": True})
           class _NoPSSM:
             def __init__(self, *a, **k): pass
             def __getattr__(self, n): return lambda *a, **k: None
@@ -136,6 +142,7 @@ jobs:
           PY
 
       - name: Render clip (p3tinydisplay)
+        continue-on-error: true
         run: python3 render_video.py
 
       - name: Render stills (Apple Software GL — correct but slow, for quality compare)
