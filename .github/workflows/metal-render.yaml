@@ -142,6 +142,18 @@ jobs:
           c_med, c_min, c_max = med_ms(lambda: (env.step([0,0.0]), cam.perceive(to_float=False)), N)
           print(f"step+perceive : median {c_med:6.1f} ms  (min {c_min:.1f} / max {c_max:.1f})  -> {1000/c_med:.1f} fps   need >= 20", flush=True)
           print("img shape:", np.asarray(cam.perceive(to_float=False)).shape, flush=True)
+
+          # ---- profile where env.step's ~386 ms actually goes ----
+          import cProfile, pstats, io as _io
+          pr = cProfile.Profile()
+          pr.enable()
+          for _ in range(10): env.step([0,0.0])
+          pr.disable()
+          s = _io.StringIO()
+          ps = pstats.Stats(pr, stream=s).sort_stats("tottime")
+          ps.print_stats(25)
+          print("==== env.step cProfile (tottime, 10 steps) ====", flush=True)
+          print(s.getvalue(), flush=True)
           PY
 
       - name: Bare Panda3D offscreen GL probe (decisive — window-less buffer?)
