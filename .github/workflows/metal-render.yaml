@@ -1,0 +1,104 @@
+name: metal-render
+
+# Hurdle #2 for issue #30693: can MetaDrive render headlessly at >=20 fps on the
+# FREE macos-14 (M1) runner? Builds MetaDriveEnv with the exact sim-bridge config
+# (single rgb_road camera at 1928x1208, image_on_cuda off, use_render off) and
+# times perceive() render throughput. Camera class is inlined so we don't pull in
+# openpilot's compiled camerad/VisionIPC stack.
+#
+# Note: openpilot's own pyproject excludes metadrive on aarch64, so we install the
+# comma fork (commaai/metadrive@minimal) directly and see if it works on macOS arm64.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ metal-probe ]
+
+jobs:
+  render:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install comma MetaDrive fork (+ panda3d)
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy "git+https://github.com/commaai/metadrive.git@minimal"
+          python -c "import panda3d, metadrive; print('panda3d', panda3d.__version__ if hasattr(panda3d,'__version__') else '?'); print('metadrive ok')"
+
+      - name: Write render benchmark
+        run: |
+          cat > render_bench.py <<'PY'
+          import time, numpy as np
+          from metadrive.component.map.pg_map import MapGenerateMethod
+          from metadrive.envs.metadrive_env import MetaDriveEnv
+          from metadrive.component.sensors.rgb_camera import RGBCamera
+          from panda3d.core import Texture, GraphicsOutput, Vec3
+
+          W, H = 1928, 1208  # tici camera res the model consumes
+
+          class CopyRamRGBCamera(RGBCamera):
+            def __init__(self, *a, **k):
+              super().__init__(*a, **k)
+              self.cpu_texture = Texture()
+              self.buffer.addRenderTexture(self.cpu_texture, GraphicsOutput.RTMCopyRam)
+            def get_rgb_array_cpu(self):
+              t = self.cpu_texture
+              return np.frombuffer(t.getRamImageAs("RGB").getData(), dtype=np.uint8).reshape((t.getYSize(), t.getXSize(), 3))[::-1]
+
+          class RGBCameraRoad(CopyRamRGBCamera):
+            def __init__(self, *a, **k):
+              super().__init__(*a, **k)
+              lens = self.get_lens(); lens.setFov(40); lens.setNear(0.1)
+
+          def straight(l): return {"id":"S","pre_block_socket_index":0,"length":l}
+          def curve(l,angle=45,d=0): return {"id":"C","pre_block_socket_index":0,"length":l,"radius":l,"angle":angle,"dir":d}
+          def create_map(ts=60):
+            cl=ts*2
+            return {"type":MapGenerateMethod.PG_MAP_FILE,"lane_num":2,"lane_width":4.5,
+                    "config":[None,straight(ts),curve(cl,90),straight(ts),curve(cl,90),straight(ts),curve(cl,90),straight(ts),curve(cl,90)]}
+
+          config = {
+            "use_render": False,
+            "vehicle_config": {"enable_reverse": False, "render_vehicle": False, "image_source": "rgb_road"},
+            "sensors": {"rgb_road": (RGBCameraRoad, W, H)},
+            "image_on_cuda": False, "image_observation": True, "interface_panel": [],
+            "out_of_route_done": False, "on_continuous_line_done": False, "crash_vehicle_done": False,
+            "crash_object_done": False, "arrive_dest_done": False, "traffic_density": 0.0,
+            "map_config": create_map(), "decision_repeat": 1, "physics_world_step_size": 5/100,
+            "preload_models": False, "show_logo": False, "anisotropic_filtering": False,
+          }
+
+          print("creating MetaDriveEnv...", flush=True)
+          t0 = time.perf_counter()
+          env = MetaDriveEnv(config)
+          env.reset()
+          print(f"env ready in {time.perf_counter()-t0:.1f}s", flush=True)
+
+          cam = env.engine.sensors["rgb_road"]
+          cam.get_cam().reparentTo(env.vehicle.origin)
+          cam.get_cam().setPos(Vec3(0,0,1.22)); cam.get_cam().setHpr(Vec3(0,0,0))
+
+          for _ in range(10):  # warmup
+            env.step([0,0.0]); cam.perceive(to_float=False)
+
+          # perceive-only (pure render cost)
+          N = 100
+          t0 = time.perf_counter()
+          for _ in range(N): img = cam.perceive(to_float=False)
+          dt = time.perf_counter()-t0
+          print(f"RENDER perceive-only: {N/dt:6.1f} fps  ({dt/N*1e3:.1f} ms/frame)", flush=True)
+
+          # full loop (step + perceive), like the bridge
+          t0 = time.perf_counter()
+          for _ in range(N): env.step([0,0.0]); img = cam.perceive(to_float=False)
+          dt = time.perf_counter()-t0
+          print(f"RENDER step+perceive: {N/dt:6.1f} fps  ({dt/N*1e3:.1f} ms/frame)   need >= 20 fps", flush=True)
+          print("img shape:", np.asarray(img).shape, flush=True)
+          PY
+
+      - name: Run render benchmark
+        continue-on-error: true
+        run: python3 render_bench.py
