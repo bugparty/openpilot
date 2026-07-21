@@ -1,0 +1,40 @@
+name: mac-build
+
+# Hurdle 3 (part 1) for issue #30693: does the FULL openpilot stack BUILD on the
+# free macos runner from this fork? openpilot already maintains a build_mac CI job
+# (op.sh setup + scons), so this should work — the only wrinkle is LFS (this fork
+# has no LFS storage, so point git-lfs at upstream commaai to fetch the model onnx).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Point git-lfs at upstream commaai and pull
+        run: |
+          git config lfs.url https://github.com/commaai/openpilot.git/info/lfs
+          git lfs install --local || true
+          git lfs pull || git lfs fetch --all || true
+          echo "=== model onnx after lfs pull ==="
+          ls -la openpilot/selfdrive/modeld/models/*.onnx
+          f=openpilot/selfdrive/modeld/models/driving_supercombo.onnx
+          echo "size=$(stat -f%z "$f") (want ~60MB)"
+
+      - name: Remove Homebrew from environment (mirror build_mac)
+        run: |
+          FILTERED=$(echo "$PATH" | tr ':' '\n' | grep -v '/opt/homebrew' | tr '\n' ':')
+          echo "PATH=${FILTERED}/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" >> $GITHUB_ENV
+
+      - name: op.sh setup
+        run: ./tools/op.sh setup
+
+      - name: Build openpilot (scons)
+        run: |
+          export CI=1
+          ./tools/op.sh build || scons -j4
