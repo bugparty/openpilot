@@ -31,8 +31,13 @@ jobs:
       - name: Write render benchmark
         run: |
           cat > render_bench.py <<'PY'
-          import time, numpy as np
+          import os, time, numpy as np
           from panda3d.core import loadPrcFileData
+          if os.environ.get("TINYDISPLAY"):
+            # Path "tinydisplay+A": use Panda3D's own software rasterizer instead of
+            # Apple Software Renderer. Native offscreen (no Cocoa window/pixel-format issue).
+            loadPrcFileData("", "load-display p3tinydisplay")
+            print("[forcing p3tinydisplay software rasterizer]", flush=True)
           # importing engine_core runs its class-body PRC (multisamples 8/4). Our bare
           # offscreen-buffer probe worked with NO multisample; ShowBase's offscreen main
           # window fails on headless Cocoa because it requests multisample. Override AFTER
@@ -253,6 +258,12 @@ jobs:
           echo "=== default env ==="; python3 gl_hw.py
           echo "=== with gl-version 4 1 + multisamples ==="; EXTRA_PRC="gl-version 4 1;framebuffer-multisample 1;multisamples 4" python3 gl_hw.py
 
-      - name: Run render benchmark (MetaDrive)
+      - name: Run render benchmark (MetaDrive) — Apple Software GL
         continue-on-error: true
+        run: python3 render_bench.py
+
+      - name: Run render benchmark (MetaDrive) — p3tinydisplay
+        continue-on-error: true
+        env:
+          TINYDISPLAY: "1"
         run: python3 render_bench.py
