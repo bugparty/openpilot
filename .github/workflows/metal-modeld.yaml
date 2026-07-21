@@ -5,6 +5,9 @@ name: metal-modeld
 # backend? modeld needs ~20 Hz (<=50 ms/frame). This runs openpilot's own
 # compile_modeld.py (exact CI path) which JIT-captures the model and prints
 # per-frame "total ms". METAL vs CPU baseline.
+#
+# Note: this fork has no LFS storage, so the .onnx is fetched by OID straight
+# from upstream commaai/openpilot's LFS (public repo, no auth needed).
 on:
   workflow_dispatch:
   push:
@@ -15,22 +18,30 @@ jobs:
     runs-on: macos-14   # free Apple Silicon (M1) runner for public repos
     timeout-minutes: 40
     env:
-      # openpilot pkg is at repo root; use the VENDORED tinygrad (submodule),
-      # not pip — this is the exact tinygrad that compiled the onnx.
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tinygrad_repo
       ONNX: openpilot/selfdrive/modeld/models/driving_supercombo.onnx
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive   # need tinygrad_repo
-          lfs: true               # need the real .onnx, not the LFS pointer
+      - uses: actions/checkout@v4   # no lfs (fork has none), no submodules yet
 
-      - name: Confirm onnx is real (not an LFS pointer)
+      - name: Init only the tinygrad submodule
+        run: git submodule update --init tinygrad_repo
+
+      - name: Fetch real onnx from upstream commaai LFS (by OID)
         run: |
+          oid=$(grep 'oid sha256:' "$ONNX" | sed 's/.*sha256://')
+          size=$(grep 'size ' "$ONNX" | awk '{print $2}')
+          echo "resolving oid=$oid size=$size"
+          href=$(curl -s -X POST \
+            -H "Accept: application/vnd.git-lfs+json" \
+            -H "Content-Type: application/vnd.git-lfs+json" \
+            -d "{\"operation\":\"download\",\"transfers\":[\"basic\"],\"objects\":[{\"oid\":\"$oid\",\"size\":$size}]}" \
+            https://github.com/commaai/openpilot.git/info/lfs/objects/batch \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['objects'][0]['actions']['download']['href'])")
+          curl -sL "$href" -o "$ONNX"
           ls -la "$ONNX"
           sz=$(stat -f%z "$ONNX")
-          echo "onnx size = $sz bytes"
-          if [ "$sz" -lt 1000000 ]; then echo "::error::onnx is still an LFS pointer"; exit 1; fi
+          echo "onnx size = $sz bytes (expected $size)"
+          if [ "$sz" != "$size" ]; then echo "::error::onnx download size mismatch"; exit 1; fi
 
       - uses: actions/setup-python@v5
         with:
