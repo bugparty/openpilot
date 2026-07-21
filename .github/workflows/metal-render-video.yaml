@@ -91,6 +91,7 @@ jobs:
             "map_config": create_map(), "decision_repeat": 1, "physics_world_step_size": 5/100,
             "preload_models": False, "show_logo": False, "anisotropic_filtering": False,
           }
+          config.pop("arrive_dest_done", None)
           env = MetaDriveEnv(config)
           env.reset()
           cam = env.engine.sensors["rgb_road"]
