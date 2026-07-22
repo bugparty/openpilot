@@ -181,10 +181,8 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
         self._dbg_frame = getattr(self, "_dbg_frame", 0) + 1
         if os.environ.get("CI") and self._dbg_frame % 50 == 0:
           _ss = self.simulated_car.sm['selfdriveState']
-          _cs = self.simulated_car.sm['controlsState']
           print(f"[engage] accel={_accel:+.2f} throttle_op={throttle_op:.2f} steer={steer_op:+.1f} "
-                f"vEgo={self.simulator_state.speed:.2f} vCruise={_cs.vCruise:.1f} "
-                f"expMode={_ss.experimentalMode} state={_ss.state}", flush=True)
+                f"vEgo={self.simulator_state.speed:.2f} expMode={_ss.experimentalMode} state={int(_ss.state)}", flush=True)
 
         self.past_startup_engaged = True
       elif not self.past_startup_engaged and self.simulated_car.sm['selfdriveState'].engageable:

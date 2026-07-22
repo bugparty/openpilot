@@ -79,18 +79,7 @@ class ModelState:
   def __init__(self, cam_w: int, cam_h: int, usbgpu: bool):
     input_devices = get_tg_input_devices(PROCESS_NAME, usbgpu)
     self.WARP_DEV, self.QUEUE_DEV = input_devices['WARP_DEV'], input_devices['QUEUE_DEV']
-    if self.QUEUE_DEV == 'METAL':
-      # Metal JITs cannot be replayed across processes (a pickled Metal JIT faults
-      # with an objc_msgSend translation fault when loaded in another process), so
-      # build them in modeld's own process instead of loading the build-time pkl. #30693
-      import openpilot.selfdrive.modeld.compile_modeld as cm
-      from openpilot.common.transformations.model import MEDMODEL_INPUT_SIZE
-      cm.WARP_DEV = self.WARP_DEV
-      onnx = str(MODELS_DIR / f"{'big_' if usbgpu else ''}driving_supercombo.onnx")
-      frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
-      jits = cm.build_jits(onnx, MEDMODEL_INPUT_SIZE, [(cam_w, cam_h)], frame_skip, capture=cm._capture_only)
-    else:
-      jits = load_oob(open_file_chunked(modeld_pkl_path(usbgpu)))
+    jits = load_oob(open_file_chunked(modeld_pkl_path(usbgpu)))
     metadata = jits['metadata']
     self.input_shapes = metadata['input_shapes']
     self.vision_input_names = [k for k in self.input_shapes if 'img' in k]
