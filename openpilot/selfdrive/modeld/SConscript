@@ -42,9 +42,11 @@ elif 'QCOM' in available:
   tg_flags = f'DEV={tg_backend} IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1'
 elif 'METAL' in available:
   # macOS (incl. free CI runners): the paravirtual GPU accelerates Metal compute,
-  # giving real-time modeld where CPU can't. See issue #30693.
+  # giving real-time modeld where CPU can't. JIT_BATCH_SIZE=0 disables the Metal
+  # command-buffer graph, which faults (objc_msgSend translation fault) on the
+  # paravirtual Metal device when the pickled JIT is replayed. See issue #30693.
   tg_backend = 'METAL'
-  tg_flags = f'DEV={tg_backend}'
+  tg_flags = f'DEV={tg_backend} JIT_BATCH_SIZE=0'
 else:
   tg_backend = 'CPU'
   tg_flags = f'DEV=CPU' if arch == 'Darwin' else 'DEV=CPU:LLVM'
