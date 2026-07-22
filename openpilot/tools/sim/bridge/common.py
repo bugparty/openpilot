@@ -106,7 +106,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
     # diagnostic-only: watch what the planner/model actually want (#30693 vehicle_not_moving)
     try:
       import openpilot.cereal.messaging as _messaging
-      self._dbg_sm = _messaging.SubMaster(['longitudinalPlan', 'modelV2', 'carState', 'selfdriveState', 'carParams'])
+      self._dbg_sm = _messaging.SubMaster(['longitudinalPlan', 'modelV2', 'carState', 'selfdriveState', 'controlsState'])
     except Exception:
       self._dbg_sm = None
 
@@ -216,13 +216,17 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
               act = self._dbg_sm['modelV2'].action
               mdl_a, mdl_c = act.desiredAcceleration, act.desiredCurvature
               cs = self._dbg_sm['carState']
-              v_set = f"{cs.vCruise:.0f}/{cs.cruiseState.speed:.1f}"  # vCruise(255=UNSET)/cruiseState.speed
-              exp_mode = self._dbg_sm['selfdriveState'].experimentalMode
-              cp = self._dbg_sm['carParams']
-              pcm_op = f"pcm={cp.pcmCruise},opLong={cp.openpilotLongitudinalControl},alphaAvail={cp.alphaLongitudinalAvailable}"
+              v_set = f"{cs.vCruise:.0f}"
+              lpm = self._dbg_sm['longitudinalPlan']
+              tp = self._dbg_sm['modelV2'].meta.disengagePredictions.gasPressProbs
+              throt_prob = tp[1] if len(tp) > 1 else -1.0
+              ctl = self._dbg_sm['controlsState']
+              pcm_op = (f"allowThr={lpm.allowThrottle} shouldStop={lpm.shouldStop} "
+                        f"throtProb={throt_prob:.2f} forceDecel={ctl.forceDecel} "
+                        f"longState={ctl.longControlState} still={cs.standstill}")
             print(f"[lng] accel={accel_cmd:+.3f} vEgo={self.simulator_state.speed:.2f} "
                   f"planV={plan_v:.2f} planA={plan_a:+.3f} lead={has_lead} src={long_src} "
-                  f"vSet={v_set} exp={exp_mode} {pcm_op} mdlA={mdl_a:+.3f}", flush=True)
+                  f"vCruise={v_set} {pcm_op} mdlA={mdl_a:+.3f}", flush=True)
         except Exception:
           pass
 
