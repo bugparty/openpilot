@@ -172,9 +172,20 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       self.simulator_state.is_engaged = self.simulated_car.sm['selfdriveState'].active
 
       if self.simulator_state.is_engaged:
-        throttle_op = np.clip(self.simulated_car.sm['carControl'].actuators.accel / 1.6, 0.0, 1.0)
-        brake_op = np.clip(-self.simulated_car.sm['carControl'].actuators.accel / 4.0, 0.0, 1.0)
+        accel_cmd = self.simulated_car.sm['carControl'].actuators.accel
+        throttle_op = np.clip(accel_cmd / 1.6, 0.0, 1.0)
+        brake_op = np.clip(-accel_cmd / 4.0, 0.0, 1.0)
         steer_op = self.simulated_car.sm['carControl'].actuators.steeringAngleDeg
+
+        # defensive diagnostic (must never crash the bridge): is openpilot commanding
+        # forward accel, or holding/braking? distinguishes perception vs actuation. #30693
+        try:
+          self._dbgn = getattr(self, "_dbgn", 0) + 1
+          if self._dbgn % 40 == 0:
+            print(f"[lng] accel={accel_cmd:+.3f} thr={throttle_op:.2f} steer={steer_op:+.1f} "
+                  f"vEgo={self.simulator_state.speed:.2f}", flush=True)
+        except Exception:
+          pass
 
         self.past_startup_engaged = True
       elif not self.past_startup_engaged and self.simulated_car.sm['selfdriveState'].engageable:
