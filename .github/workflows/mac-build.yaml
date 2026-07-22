@@ -79,5 +79,16 @@ jobs:
           echo "=== render fps ==="; grep -iaE "metadrive render fps" /tmp/simtest.txt | tail -3
           echo "=== assert / CarEvents / failure states ==="; grep -aiE "AssertionError|FAILED |CarEvents '\[|Failure states|not running '\[|did not engage" /tmp/simtest.txt | head -10
           echo "=== tracebacks ==="; awk '/Traceback \(most recent call last\)/{p=1} p{print} p&&/^[A-Za-z_.]*(Error|Exception):/{print "----"; p=0}' /tmp/simtest.txt | head -80
+          echo "=== longitudinal / MPC / engage signals ==="; grep -aiE "SQP_RTI|QP solver|longActive|accel|vCruise|cameraOdometry ignored|models loaded in|control.*active|standstill|should_stop|experimentalMode" /tmp/simtest.txt | grep -aivE "render fps" | tail -40
+          # preserve the FULL sim stdout for audit (the grepped summaries above discard most of it)
+          cp /tmp/simtest.txt "$GITHUB_WORKSPACE/simtest_full.txt" 2>/dev/null || true
           echo "pytest exit code: $CODE"
           exit "$CODE"
+
+      - name: Upload full sim log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simtest-full-log
+          path: simtest_full.txt
+          if-no-files-found: warn
