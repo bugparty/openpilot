@@ -1,0 +1,46 @@
+name: metal-zink
+
+# Feasibility probe for issue #30693 hardware-render path: can Mesa's Zink driver
+# (OpenGL-over-Vulkan) route GL to the paravirtual GPU via MoltenVK on the free macos
+# runner? If a GL context reports GL_RENDERER containing "zink"/"Apple Paravirtual"
+# (not "Apple Software Renderer"), hardware GL is reachable and could offload the
+# MetaDrive software render off the CPU. This ONLY tests the driver stack, not Panda3D.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ metal-zink ]
+
+jobs:
+  zink:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install Mesa + MoltenVK + Vulkan + demos
+        run: |
+          brew update >/dev/null 2>&1 || true
+          brew install mesa mesa-demos molten-vk vulkan-tools vulkan-loader 2>&1 | tail -8 || \
+            brew install mesa molten-vk vulkan-tools
+          P=$(brew --prefix)
+          echo "=== mesa libs ==="; find "$P" -iname "libGL*.dylib" -o -iname "libEGL*.dylib" -o -iname "libgallium*" 2>/dev/null | head -20
+          echo "=== zink present? ==="; find "$P" -iname "*zink*" 2>/dev/null | head
+          echo "=== eglinfo/glxinfo present? ==="; ls -la "$P"/bin/eglinfo "$P"/bin/glxinfo 2>/dev/null
+          echo "=== MoltenVK ICD ==="; find "$P" -name "MoltenVK_icd.json" 2>/dev/null | head
+
+      - name: Probe — does Zink give a hardware GL renderer?
+        continue-on-error: true
+        run: |
+          P=$(brew --prefix)
+          export MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=0
+          export VK_ICD_FILENAMES=$(find "$P" -name "MoltenVK_icd.json" 2>/dev/null | head -1)
+          export VK_DRIVER_FILES="$VK_ICD_FILENAMES"
+          export MESA_LOADER_DRIVER_OVERRIDE=zink
+          export GALLIUM_DRIVER=zink
+          export DYLD_LIBRARY_PATH="$P/lib:$DYLD_LIBRARY_PATH"
+          echo "VK_ICD_FILENAMES=$VK_ICD_FILENAMES"
+          echo "=== 1) confirm hardware Vulkan still there ==="
+          vulkaninfo --summary 2>&1 | grep -iE "deviceName|deviceType|driverName" | head
+          echo "=== 2) eglinfo via Zink (surfaceless) ==="
+          EGL_PLATFORM=surfaceless "$P/bin/eglinfo" 2>&1 | grep -iE "renderer|vendor|version|zink|apple|surfaceless|EGL_" | head -30 || echo "eglinfo failed/absent"
+          echo "=== 3) glxinfo via Zink (needs a display; likely fails on headless mac) ==="
+          "$P/bin/glxinfo" -B 2>&1 | grep -iE "renderer|vendor|zink|apple" | head -10 || echo "glxinfo failed/absent"
+          echo "done"
