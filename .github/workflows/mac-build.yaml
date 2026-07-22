@@ -59,7 +59,6 @@ jobs:
           METADRIVE_FLAT_TERRAIN_CARD: "1"
           METADRIVE_RENDER_SCALE: "0.5"
           BLOCK: "soundd"   # sound .wav assets are LFS-absent on the fork; not needed for the test
-          LOGPRINT: "debug"
         run: |
           set +e   # default shell is `bash -e`; manage the exit code ourselves so a
                    # non-matching diagnostic grep or a failing `wait` doesn't abort early
