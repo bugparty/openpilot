@@ -40,7 +40,7 @@ if 'CUDA' in available:
 elif 'QCOM' in available:
   tg_backend = 'QCOM'
   tg_flags = f'DEV={tg_backend} IMAGE=1 FLOAT16=1 NOLOCALS=1 JIT_BATCH_SIZE=0 OPENPILOT_HACKS=1'
-elif 'METAL' in available:
+elif 'METAL' in available and not os.environ.get('MODELD_FORCE_CPU'):
   # macOS (incl. free CI runners): the paravirtual GPU accelerates Metal compute,
   # giving real-time modeld where CPU can't. JIT_BATCH_SIZE=0 disables the Metal
   # command-buffer graph, which faults (objc_msgSend translation fault) on the

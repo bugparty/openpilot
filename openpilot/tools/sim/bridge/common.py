@@ -178,6 +178,20 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       self.simulated_car.sm.update(0)
       self.simulator_state.is_engaged = self.simulated_car.sm['selfdriveState'].active
 
+      # always-on model diagnostic (does modeld hallucinate a lead?), not gated by engagement #30693
+      try:
+        self._dbg2 = getattr(self, "_dbg2", 0) + 1
+        if self._dbg2 % 50 == 0 and self._dbg_sm is not None:
+          self._dbg_sm.update(0)
+          mv = self._dbg_sm['modelV2']
+          leads = mv.leadsV3
+          lp = max((ld.prob for ld in leads), default=-1.0)
+          lx = leads[0].x[0] if len(leads) and len(leads[0].x) else -1.0
+          print(f"[mdl] engaged={self.simulator_state.is_engaged} leadProb={lp:.2f} leadX={lx:.1f} "
+                f"mdlA={mv.action.desiredAcceleration:+.3f} mdlCurv={mv.action.desiredCurvature:+.4f}", flush=True)
+      except Exception:
+        pass
+
       if self.simulator_state.is_engaged:
         accel_cmd = self.simulated_car.sm['carControl'].actuators.accel
         throttle_op = np.clip(accel_cmd / 1.6, 0.0, 1.0)

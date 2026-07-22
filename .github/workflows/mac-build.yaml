@@ -42,6 +42,8 @@ jobs:
         run: ./tools/op.sh setup
 
       - name: Build openpilot (scons)
+        env:
+          MODELD_FORCE_CPU: "1"   # diagnostic: build modeld for CPU to test if the phantom lead is Metal-specific (#30693)
         run: |
           export CI=1
           ./tools/op.sh build || scons -j4
