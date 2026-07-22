@@ -42,8 +42,6 @@ jobs:
         run: ./tools/op.sh setup
 
       - name: Build openpilot (scons)
-        env:
-          MODELD_FORCE_CPU: "1"   # diagnostic: build modeld for CPU to test if the phantom lead is Metal-specific (#30693)
         run: |
           export CI=1
           ./tools/op.sh build || scons -j4
@@ -58,7 +56,9 @@ jobs:
         env:
           METADRIVE_SIMPLE_RENDER: "1"
           METADRIVE_NO_MSAA: "1"
+          METADRIVE_FLAT_TERRAIN_CARD: "1"
           METADRIVE_RENDER_SCALE: "0.25"
+          METADRIVE_SKY_CLEAR: "1"   # sky-color the white void so the model doesn't see a phantom lead
           BLOCK: "soundd"   # sound .wav assets are LFS-absent on the fork; not needed for the test
         run: |
           set +e   # default shell is `bash -e`; manage the exit code ourselves so a

@@ -11,6 +11,18 @@ class CopyRamRGBCamera(RGBCamera):
     super().__init__(*args, **kwargs)
     self.cpu_texture = Texture()
     self.buffer.addRenderTexture(self.cpu_texture, GraphicsOutput.RTMCopyRam)
+    if os.environ.get("METADRIVE_SKY_CLEAR"):
+      # the skybox is disabled in CI, so the sky region clears to WHITE. A white void
+      # above the horizon can read to the driving model as a stopped white obstacle
+      # (phantom lead -> openpilot brakes and won't move). Clear to a sky color. #30693
+      try:
+        from panda3d.core import LColor
+        for i in range(self.buffer.get_num_display_regions()):
+          dr = self.buffer.get_display_region(i)
+          dr.set_clear_color_active(True)
+          dr.set_clear_color(LColor(0.55, 0.65, 0.8, 1.0))
+      except Exception:
+        pass
 
   def _setup_effect(self):
     if os.environ.get("METADRIVE_SIMPLE_RENDER"):
