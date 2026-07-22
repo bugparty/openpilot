@@ -54,14 +54,14 @@ jobs:
           cd openpilot/tools/sim
           ./launch_openpilot.sh > /tmp/oplog.txt 2>&1 &
           LPID=$!
-          sleep 45
-          echo "=== processes alive after 45s ==="
-          ps aux | grep -iE "manager\.py|modeld|controlsd|selfdrived|plannerd|locationd|calibrationd|card\.py|radard|paramsd|torqued" | grep -v grep | awk '{$1=$2=$3=$4=$5=$6=$7=$8=$9=$10=""; print}' | sort -u | head -40
-          echo "=== manager log tail ==="
-          tail -70 /tmp/oplog.txt
-          echo "=== errors / tracebacks ==="
-          grep -iE "traceback|error|exception|no module|not found|failed to|abort|segmentation|panic|dyld|symbol not found" /tmp/oplog.txt | head -50
+          sleep 60
+          echo "=== openpilot python daemons alive after 60s ==="
+          ps aux | grep -iE "work/openpilot.*\.py" | grep -v grep | grep -oE "[a-z_]+\.py" | sort | uniq -c | sort -rn | head -40
+          echo "=== full tracebacks in log ==="
+          awk '/Traceback \(most recent call last\)/{p=1} p{print} /Error|Exception/{if(p)print "----"} p&&/^[A-Za-z].*Error|^[A-Za-z].*Exception/{p=0}' /tmp/oplog.txt | head -120
+          echo "=== error one-liners ==="
+          grep -iE "no module|not found|failed to|abort|segmentation|panic|dyld|symbol not found|address already|permission denied" /tmp/oplog.txt | sort -u | head -40
           kill $LPID 2>/dev/null || true
           pkill -f manager.py 2>/dev/null || true
-          pkill -f "openpilot" 2>/dev/null || true
+          pkill -f "work/openpilot" 2>/dev/null || true
           echo "done"
