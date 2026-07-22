@@ -106,7 +106,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
     # diagnostic-only: watch what the planner/model actually want (#30693 vehicle_not_moving)
     try:
       import openpilot.cereal.messaging as _messaging
-      self._dbg_sm = _messaging.SubMaster(['longitudinalPlan', 'modelV2'])
+      self._dbg_sm = _messaging.SubMaster(['longitudinalPlan', 'modelV2', 'carState', 'selfdriveState'])
     except Exception:
       self._dbg_sm = None
 
@@ -205,17 +205,21 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           if self._dbgn % 40 == 0:
             plan_v = plan_a = mdl_a = mdl_c = -99.0
             has_lead = "?"
+            v_set = long_src = exp_mode = "?"
             if self._dbg_sm is not None:
               self._dbg_sm.update(0)
               lp = self._dbg_sm['longitudinalPlan']
               if len(lp.speeds): plan_v = lp.speeds[-1]
               if len(lp.accels): plan_a = lp.accels[-1]
               has_lead = lp.hasLead
+              long_src = lp.longitudinalPlanSource
               act = self._dbg_sm['modelV2'].action
               mdl_a, mdl_c = act.desiredAcceleration, act.desiredCurvature
+              v_set = f"{self._dbg_sm['carState'].cruiseState.speed:.1f}"
+              exp_mode = self._dbg_sm['selfdriveState'].experimentalMode
             print(f"[lng] accel={accel_cmd:+.3f} vEgo={self.simulator_state.speed:.2f} "
-                  f"planV={plan_v:.2f} planA={plan_a:+.3f} lead={has_lead} "
-                  f"mdlA={mdl_a:+.3f} mdlCurv={mdl_c:+.4f}", flush=True)
+                  f"planV={plan_v:.2f} planA={plan_a:+.3f} lead={has_lead} src={long_src} "
+                  f"vSet={v_set} exp={exp_mode} mdlA={mdl_a:+.3f} mdlCurv={mdl_c:+.4f}", flush=True)
         except Exception:
           pass
 
