@@ -106,7 +106,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
     # diagnostic-only: watch what the planner/model actually want (#30693 vehicle_not_moving)
     try:
       import openpilot.cereal.messaging as _messaging
-      self._dbg_sm = _messaging.SubMaster(['longitudinalPlan', 'modelV2', 'carState', 'selfdriveState'])
+      self._dbg_sm = _messaging.SubMaster(['longitudinalPlan', 'modelV2', 'carState', 'selfdriveState', 'carParams'])
     except Exception:
       self._dbg_sm = None
 
@@ -205,7 +205,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           if self._dbgn % 40 == 0:
             plan_v = plan_a = mdl_a = mdl_c = -99.0
             has_lead = "?"
-            v_set = long_src = exp_mode = "?"
+            v_set = long_src = exp_mode = pcm_op = "?"
             if self._dbg_sm is not None:
               self._dbg_sm.update(0)
               lp = self._dbg_sm['longitudinalPlan']
@@ -215,11 +215,14 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
               long_src = lp.longitudinalPlanSource
               act = self._dbg_sm['modelV2'].action
               mdl_a, mdl_c = act.desiredAcceleration, act.desiredCurvature
-              v_set = f"{self._dbg_sm['carState'].cruiseState.speed:.1f}"
+              cs = self._dbg_sm['carState']
+              v_set = f"{cs.vCruise:.0f}/{cs.cruiseState.speed:.1f}"  # vCruise(255=UNSET)/cruiseState.speed
               exp_mode = self._dbg_sm['selfdriveState'].experimentalMode
+              cp = self._dbg_sm['carParams']
+              pcm_op = f"pcm={cp.pcmCruise},opLong={cp.openpilotLongitudinalControl},alphaAvail={cp.alphaLongitudinalAvailable}"
             print(f"[lng] accel={accel_cmd:+.3f} vEgo={self.simulator_state.speed:.2f} "
                   f"planV={plan_v:.2f} planA={plan_a:+.3f} lead={has_lead} src={long_src} "
-                  f"vSet={v_set} exp={exp_mode} mdlA={mdl_a:+.3f} mdlCurv={mdl_c:+.4f}", flush=True)
+                  f"vSet={v_set} exp={exp_mode} {pcm_op} mdlA={mdl_a:+.3f}", flush=True)
         except Exception:
           pass
 
