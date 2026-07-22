@@ -299,10 +299,48 @@ def read_file_chunked_to_disk(path):
   return tmp_path
 
 
-if __name__ == "__main__":
+def _capture_only(jit, make_random_inputs, input_keys, make_queues):
+  # In-process JIT capture (no pickle round-trip / verify). Metal JITs cannot be
+  # replayed across processes (a pickled Metal JIT faults with an objc_msgSend
+  # translation fault when loaded in another process), so on macOS modeld builds
+  # its JITs in its own process instead of loading a build-time pkl. See #30693.
+  input_queues, npy = make_queues(Device.DEFAULT)
+  rng = np.random.default_rng(42)
+  Tensor.manual_seed(42)
+  for _ in range(3):  # TinyJit captures on the 2nd+ call
+    for v in npy.values():
+      v[:] = rng.standard_normal(v.shape).astype(v.dtype)
+    Device.default.synchronize()
+    jit(**{k: input_queues[k] for k in input_keys}, **make_random_inputs())
+    Device.default.synchronize()
+  return jit
+
+
+def build_jits(onnx, model_size, camera_resolutions, frame_skip, capture=compile_jit):
   from tinygrad.nn.onnx import OnnxRunner
   from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
   from openpilot.selfdrive.modeld.get_model_metadata import make_metadata_dict
+  model_path = read_file_chunked_to_disk(onnx)
+  model_w, model_h = model_size
+
+  model_runner = OnnxRunner(model_path)
+  out = {'metadata': make_metadata_dict(model_path)}
+
+  run_policy_jit = TinyJit(make_run_policy(model_runner, out['metadata'], frame_skip), prune=True)
+  make_policy_queues = partial(make_input_queues, out['metadata']['input_shapes'], frame_skip)
+  make_random_model_inputs = partial(make_random_images, keys=['warped'], shape=(2, 6, *out['metadata']['input_shapes']['img'][2:]), device=WARP_DEV)
+  out['run_policy'] = capture(run_policy_jit, make_random_model_inputs, POLICY_INPUTS, make_policy_queues)
+
+  for cam_w, cam_h in camera_resolutions:
+    nv12 = NV12Frame(cam_w, cam_h, *get_nv12_info(cam_w, cam_h))
+    make_random_warp_inputs = partial(make_random_images, keys=['frame', 'big_frame'], shape=nv12.size, device=WARP_DEV)
+    warp = TinyJit(make_warp(nv12, model_w, model_h, frame_skip), prune=True)
+    make_warp_queues = partial(make_warp_input_queues, out['metadata']['input_shapes'], frame_skip)
+    out[(cam_w, cam_h)] = capture(warp, make_random_warp_inputs, WARP_INPUTS, make_warp_queues)
+  return out
+
+
+if __name__ == "__main__":
   p = argparse.ArgumentParser()
   p.add_argument('--model-size', type=_parse_size, required=True, help='model input WxH')
   p.add_argument('--camera-resolutions', type=_parse_size, nargs='+', required=True,
@@ -315,25 +353,7 @@ if __name__ == "__main__":
   if 'USB+AMD' in os.environ.get('DEV', ''):
     wait_usbgpu_link()
 
-  model_path = read_file_chunked_to_disk(args.onnx)
-  model_w, model_h = args.model_size
-
-  model_runner = OnnxRunner(model_path)
-  out = {'metadata': make_metadata_dict(model_path)}
-
-  run_policy_jit = TinyJit(make_run_policy(model_runner, out['metadata'], args.frame_skip), prune=True)
-
-  make_policy_queues = partial(make_input_queues, out['metadata']['input_shapes'], args.frame_skip)
-  make_random_model_inputs = partial(make_random_images, keys=['warped'], shape=(2, 6, *out['metadata']['input_shapes']['img'][2:]), device=WARP_DEV)
-  out['run_policy'] = compile_jit(run_policy_jit, make_random_model_inputs, POLICY_INPUTS,
-                                  make_policy_queues)
-
-  for cam_w, cam_h in args.camera_resolutions:
-    nv12 = NV12Frame(cam_w, cam_h, *get_nv12_info(cam_w, cam_h))
-    make_random_warp_inputs = partial(make_random_images, keys=['frame', 'big_frame'], shape=nv12.size, device=WARP_DEV)
-    warp = TinyJit(make_warp(nv12, model_w, model_h, args.frame_skip), prune=True)
-    make_warp_queues = partial(make_warp_input_queues, out['metadata']['input_shapes'], args.frame_skip)
-    out[(cam_w,cam_h)] = compile_jit(warp, make_random_warp_inputs, WARP_INPUTS, make_warp_queues)
+  out = build_jits(args.onnx, args.model_size, args.camera_resolutions, args.frame_skip)
 
   with open(args.output, "wb") as f:
     dump_oob(out, f)
