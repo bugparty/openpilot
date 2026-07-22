@@ -59,6 +59,8 @@ jobs:
           METADRIVE_FLAT_TERRAIN_CARD: "1"
           METADRIVE_RENDER_SCALE: "0.25"
           METADRIVE_SKY_CLEAR: "1"   # sky-color the white void so the model doesn't see a phantom lead
+          METADRIVE_DUMP_FRAMES: "1"  # dump the exact RGB frames modeld consumes (see the top-right color-block artifact)
+          METADRIVE_DUMP_DIR: "/tmp"
           BLOCK: "soundd"   # sound .wav assets are LFS-absent on the fork; not needed for the test
         run: |
           set +e   # default shell is `bash -e`; manage the exit code ourselves so a
@@ -82,6 +84,9 @@ jobs:
           echo "=== longitudinal / MPC / engage signals ==="; grep -aiE "\[lng\]|SQP_RTI|QP solver|longActive|accel|vCruise|cameraOdometry ignored|models loaded in|control.*active|standstill|should_stop|experimentalMode" /tmp/simtest.txt | grep -aivE "render fps" | tail -40
           # preserve the FULL sim stdout for audit (the grepped summaries above discard most of it)
           cp /tmp/simtest.txt "$GITHUB_WORKSPACE/simtest_full.txt" 2>/dev/null || true
+          # preserve the dumped model-input frames for artifact inspection
+          cp /tmp/modelframe_*.png "$GITHUB_WORKSPACE/" 2>/dev/null || true
+          echo "=== dumped model-input frames ==="; ls -la "$GITHUB_WORKSPACE"/modelframe_*.png 2>/dev/null || echo "(none)"
           echo "pytest exit code: $CODE"
           exit "$CODE"
 
@@ -91,4 +96,12 @@ jobs:
         with:
           name: simtest-full-log
           path: simtest_full.txt
+          if-no-files-found: warn
+
+      - name: Upload model-input frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-input-frames
+          path: modelframe_*.png
           if-no-files-found: warn

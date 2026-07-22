@@ -1,4 +1,5 @@
 import math
+import os
 import time
 import numpy as np
 
@@ -159,6 +160,20 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
         wide_road_image[...] = get_cam_as_rgb("rgb_wide")
       road_image[...] = get_cam_as_rgb("rgb_road")
       image_lock.release()
+
+      # DIAGNOSTIC (#30693): dump a few of the exact RGB frames the model consumes,
+      # so we can eyeball render artifacts (e.g. the top-right color block) and
+      # exposure that may be triggering a phantom lead. Gated by env; one-shot.
+      if os.environ.get("METADRIVE_DUMP_FRAMES") and render_frames in (60, 120, 200, 300):
+        try:
+          from PIL import Image
+          dump_dir = os.environ.get("METADRIVE_DUMP_DIR", "/tmp")
+          Image.fromarray(np.ascontiguousarray(road_image)).save(f"{dump_dir}/modelframe_road_{render_frames:04d}.png")
+          if dual_camera:
+            Image.fromarray(np.ascontiguousarray(wide_road_image)).save(f"{dump_dir}/modelframe_wide_{render_frames:04d}.png")
+          print(f"[dumpframe] saved model input frame {render_frames} to {dump_dir}", flush=True)
+        except Exception as e:
+          print(f"[dumpframe] failed: {e}", flush=True)
 
       render_frames += 1
       if render_frames % 100 == 0:
