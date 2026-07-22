@@ -117,14 +117,15 @@ jobs:
 
           # capture a driving clip
           frames=[]
-          for i in range(160):
+          for i in range(200):
             v = env.vehicle
             steer=0.0
             try:
-              lat = v.lane.local_coordinates(v.position)[1]
-              steer = float(np.clip(-lat*0.15 - (v.heading_diff(v.lane)-0.5)*2.0, -0.4, 0.4))
+              long, lat = v.lane.local_coordinates(v.position)
+              # steer toward lane center + a little lookahead damping on heading
+              steer = float(np.clip(-lat*0.35 - float(v.heading_diff(v.lane) - 0.5)*1.2, -0.3, 0.3))
             except Exception: pass
-            _,_,term,_,_ = env.step([steer,0.2]); setcam()
+            _,_,term,_,_ = env.step([steer,0.10]); setcam()
             im = grab()
             im = im[:im.shape[0]//2*2, :im.shape[1]//2*2]
             frames.append(im)
