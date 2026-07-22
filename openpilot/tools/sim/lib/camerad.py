@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 
 from msgq.visionipc import VisionIpcServer, VisionStreamType
@@ -64,7 +66,12 @@ class Camerad:
     return rgb_to_nv12(rgb)
 
   def _send_yuv(self, yuv, frame_id, pub_type, yuv_type):
-    eof = int(frame_id * 0.05 * 1e9)
+    # Use wall-clock monotonic time (same clock as the simulated IMU's logMonoTime).
+    # frame_id*0.05 is a sim-time clock starting at 0, which is thousands of seconds
+    # behind the IMU-driven filter clock in locationd, so cameraOdometry was always
+    # rejected as "older than the max rewind threshold" and the pose filter never
+    # validated (no engagement). See issue #30693.
+    eof = int(time.monotonic() * 1e9)
     self.vipc_server.send(yuv_type, yuv, frame_id, eof, eof)
 
     dat = messaging.new_message(pub_type, valid=True)
