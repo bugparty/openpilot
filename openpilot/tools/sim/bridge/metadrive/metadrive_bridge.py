@@ -94,6 +94,12 @@ class MetaDriveBridge(SimulatorBridge):
       show_logo=False,
       anisotropic_filtering=False,
       show_terrain=not bool(os.environ.get("METADRIVE_NO_TERRAIN")),
+      # The skybox is only hidden from MiniMap|Shadow cams, so the openpilot RGB
+      # sensor renders it. On CI (no tonemap, software GL) the HDR skybox clips to
+      # a pure-white void with a cube-corner artifact, which the driving model reads
+      # as a phantom lead -> car won't move (#30693). Drop the skybox geometry so the
+      # sky region shows the sky-blue clear color set in CopyRamRGBCamera instead.
+      show_skybox=not bool(os.environ.get("METADRIVE_SKY_CLEAR")),
     )
 
     return MetaDriveWorld(queue, config, self.test_duration, self.test_run, self.dual_camera)
