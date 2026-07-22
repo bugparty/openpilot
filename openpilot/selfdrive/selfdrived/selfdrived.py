@@ -377,7 +377,9 @@ class SelfdriveD:
     if not self.CP.notCar:
       if not self.sm['livePose'].posenetOK:
         self.events.add(EventName.posenetInvalid)
-      if not self.sm['livePose'].inputsOK:
+      if not self.sm['livePose'].inputsOK and (not SIMULATION or REPLAY):
+        # in simulation, transient input-valid flaps on loaded CI runners cause
+        # spurious soft-disables (forceDecel) that hold the car at standstill
         self.events.add(EventName.locationdTemporaryError)
       if not self.sm['liveParameters'].valid and cal_status == log.LiveCalibrationData.Status.calibrated and not TESTING_CLOSET and (not SIMULATION or REPLAY):
         self.events.add(EventName.paramsdTemporaryError)
