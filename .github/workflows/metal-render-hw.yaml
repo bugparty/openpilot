@@ -1,0 +1,86 @@
+name: metal-render-hw
+
+# Settle it: does DIRECT Metal *rendering* (MTLRenderCommandEncoder — the path
+# MoltenVK crashed on) work on the free macos runner's paravirtual GPU? tinygrad
+# proved Metal *compute* works; MoltenVK proved its argument-buffer path fails.
+# This draws a triangle to an offscreen texture with a real render pipeline.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ metal-hw ]
+
+jobs:
+  hw:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - name: Write Metal render test
+        run: |
+          cat > metaltest.swift <<'SWIFT'
+          import Metal
+          import Foundation
+
+          guard let device = MTLCreateSystemDefaultDevice() else {
+            print("NO METAL DEVICE"); exit(1)
+          }
+          print("device:   \(device.name)")
+          print("headless: \(device.isHeadless)  lowPower: \(device.isLowPower)")
+
+          let src = """
+          #include <metal_stdlib>
+          using namespace metal;
+          struct VOut { float4 pos [[position]]; };
+          vertex VOut vmain(uint vid [[vertex_id]]) {
+            float2 p[3] = { float2(-0.8,-0.8), float2(0.8,-0.8), float2(0.0,0.8) };
+            VOut o; o.pos = float4(p[vid], 0, 1); return o;
+          }
+          fragment float4 fmain() { return float4(1.0, 0.5, 0.2, 1.0); }
+          """
+          do {
+            let lib = try device.makeLibrary(source: src, options: nil)
+            let pd = MTLRenderPipelineDescriptor()
+            pd.vertexFunction = lib.makeFunction(name: "vmain")
+            pd.fragmentFunction = lib.makeFunction(name: "fmain")
+            pd.colorAttachments[0].pixelFormat = .rgba8Unorm
+            let pipe = try device.makeRenderPipelineState(descriptor: pd)
+
+            let W = 64, H = 64
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: W, height: H, mipmapped: false)
+            td.usage = [.renderTarget, .shaderRead]
+            guard let tex = device.makeTexture(descriptor: td) else { print("no texture"); exit(1) }
+
+            let q = device.makeCommandQueue()!
+            let cb = q.makeCommandBuffer()!
+            let rpd = MTLRenderPassDescriptor()
+            rpd.colorAttachments[0].texture = tex
+            rpd.colorAttachments[0].loadAction = .clear
+            rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+            rpd.colorAttachments[0].storeAction = .store
+            let enc = cb.makeRenderCommandEncoder(descriptor: rpd)!
+            enc.setRenderPipelineState(pipe)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            enc.endEncoding()
+            cb.commit()
+            cb.waitUntilCompleted()
+            if let e = cb.error { print("command buffer error: \(e)") }
+
+            var buf = [UInt8](repeating: 0, count: W*H*4)
+            tex.getBytes(&buf, bytesPerRow: W*4, from: MTLRegionMake2D(0, 0, W, H), mipmapLevel: 0)
+            var nonblack = 0, orange = 0
+            for i in stride(from: 0, to: buf.count, by: 4) {
+              if Int(buf[i]) + Int(buf[i+1]) + Int(buf[i+2]) > 30 { nonblack += 1 }
+              if buf[i] > 200 && buf[i+1] > 100 && buf[i+1] < 180 { orange += 1 }
+            }
+            print("rendered non-black pixels: \(nonblack)/\(W*H), orange-ish: \(orange)")
+            print(nonblack > 100
+              ? "RESULT: HARDWARE METAL RENDERING WORKS on \(device.name)"
+              : "RESULT: render produced blank output")
+          } catch {
+            print("RESULT: Metal rendering FAILED: \(error)")
+          }
+          SWIFT
+
+      - name: Compile + run
+        run: |
+          swiftc -O metaltest.swift -o metaltest
+          ./metaltest
