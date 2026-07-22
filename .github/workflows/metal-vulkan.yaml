@@ -29,14 +29,22 @@ jobs:
           echo "icd=$ICD" >> "$GITHUB_OUTPUT"
           find "$PREFIX" -iname "*MoltenVK*" 2>/dev/null | head -20
 
-      - name: vulkaninfo — is there a HARDWARE Vulkan device?
+      - name: vulkaninfo (default — Metal Argument Buffers ON, expected to crash)
         continue-on-error: true
         env:
           VK_ICD_FILENAMES: ${{ steps.icd.outputs.icd }}
           VK_DRIVER_FILES: ${{ steps.icd.outputs.icd }}
+        run: vulkaninfo --summary 2>&1 | head -40 || true
+
+      - name: vulkaninfo (WORKAROUND MoltenVK#2373 — argument buffers OFF)
+        continue-on-error: true
+        env:
+          VK_ICD_FILENAMES: ${{ steps.icd.outputs.icd }}
+          VK_DRIVER_FILES: ${{ steps.icd.outputs.icd }}
+          MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS: "0"
         run: |
-          echo "VK_ICD_FILENAMES=$VK_ICD_FILENAMES"
+          echo "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=0"
           echo "=== vulkaninfo --summary ==="
-          vulkaninfo --summary 2>&1 | sed -n '1,80p' || true
-          echo "=== deviceType / deviceName / driverName ==="
-          vulkaninfo 2>&1 | grep -iE "deviceName|deviceType|driverName|driverInfo|apiVersion" | head -30 || true
+          vulkaninfo --summary 2>&1 | sed -n '1,90p' || true
+          echo "=== deviceName / deviceType / driverName ==="
+          vulkaninfo 2>&1 | grep -iE "deviceName|deviceType|driverName|driverInfo|apiVersion|VK_PHYSICAL_DEVICE_TYPE" | head -30 || true
