@@ -53,7 +53,6 @@ jobs:
             pip install "git+https://github.com/commaai/metadrive.git@minimal"
 
       - name: Run FULL MetaDrive sim (manager + bridge) on macOS
-        continue-on-error: true
         env:
           METADRIVE_SIMPLE_RENDER: "1"
           METADRIVE_NO_MSAA: "1"
@@ -62,30 +61,23 @@ jobs:
           BLOCK: "soundd"   # sound .wav assets are LFS-absent on the fork; not needed for the test
           LOGPRINT: "debug"
         run: |
+          set +e   # default shell is `bash -e`; manage the exit code ourselves so a
+                   # non-matching diagnostic grep or a failing `wait` doesn't abort early
           source "$GITHUB_WORKSPACE/.venv/bin/activate"
           export CI=1 PYTHONUNBUFFERED=1
           cd openpilot/tools/sim
-          ( python -m pytest -s -o cache_dir=/tmp/pc tests/test_metadrive_bridge.py > /tmp/simtest.txt 2>&1 ) &
-          TPID=$!
-          # bound the run; macOS has no coreutils `timeout` by default
-          for i in $(seq 1 24); do kill -0 $TPID 2>/dev/null || break; sleep 10; done
-          kill $TPID 2>/dev/null || true
+          # Run pytest in the FOREGROUND so its exit code is the authoritative pass/fail
+          # signal (a backgrounded `... &` subshell swallows the exit code -> false green).
+          # macOS has no coreutils `timeout`, so a background watchdog kills a hang.
+          python -m pytest -s -o cache_dir=/tmp/pc tests/test_metadrive_bridge.py > /tmp/simtest.txt 2>&1 &
+          PYPID=$!
+          ( sleep 300; kill -9 "$PYPID" 2>/dev/null ) & WDOG=$!
+          wait "$PYPID"; CODE=$?
+          kill "$WDOG" 2>/dev/null || true
           pkill -f manager.py 2>/dev/null || true; pkill -f "work/openpilot" 2>/dev/null || true
-          echo "=== metadrive render fps lines ==="; grep -iE "metadrive render fps" /tmp/simtest.txt | tail -5
-          echo "=== daemons that ran (from managerState / logs) ==="; grep -oiE "starting \w+|\w+d\.py" /tmp/simtest.txt | sort | uniq -c | sort -rn | head -30
-          echo "=== test result / assert ==="; grep -iE "PASSED|FAILED|assert|not running|CarEvents|exited with code|Bridge process" /tmp/simtest.txt | head -20
-          echo "=== tracebacks ==="
-          awk '/Traceback \(most recent call last\)/{p=1} p{print} p&&/^[A-Za-z_.]*(Error|Exception):/{print "----"; p=0}' /tmp/simtest.txt | head -140
-          echo "=== error one-liners ==="; grep -iE "no module|dyld|symbol not found|segmentation|abort|/proc|/sys|not found|failed to" /tmp/simtest.txt | sort -u | head -40
-          echo "=== modeld lifecycle from simtest ==="; grep -iE "modeld|loading model|models loaded|vision stream|connected main|died|unexpectedly|Metal|objc\[|MTL" /tmp/simtest.txt | grep -viE "render fps|cameraOdometry ignored" | head -30
-          echo "=== macOS crash reports (modeld/python signal crash) ==="
-          sleep 5  # let the crash reporter flush
-          for d in "$HOME/Library/Logs/DiagnosticReports" "/Library/Logs/DiagnosticReports"; do
-            ls -t "$d"/*.ips "$d"/*.crash 2>/dev/null | head -5
-          done | while read -r r; do
-            echo "==== $r ===="
-            # .ips is JSON+JSON; pull the signal, faulting thread, and top frames
-            grep -aoE "\"(exception|termination|signal|reason)\"[^,}]*" "$r" 2>/dev/null | head -8
-            grep -aiE "python|modeld|Metal|MTL|libobjc|tinygrad|MPSGraph|IOGPU|AGX|dispatch|__pthread" "$r" 2>/dev/null | head -25
-          done
-          echo "done"
+          echo "=== pytest summary (authoritative) ==="; grep -aE " passed| failed| error" /tmp/simtest.txt | tail -3
+          echo "=== render fps ==="; grep -iaE "metadrive render fps" /tmp/simtest.txt | tail -3
+          echo "=== assert / CarEvents / failure states ==="; grep -aiE "AssertionError|FAILED |CarEvents '\[|Failure states|not running '\[|did not engage" /tmp/simtest.txt | head -10
+          echo "=== tracebacks ==="; awk '/Traceback \(most recent call last\)/{p=1} p{print} p&&/^[A-Za-z_.]*(Error|Exception):/{print "----"; p=0}' /tmp/simtest.txt | head -80
+          echo "pytest exit code: $CODE"
+          exit "$CODE"
