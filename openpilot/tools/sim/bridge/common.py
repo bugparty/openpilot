@@ -1,4 +1,3 @@
-import os
 import signal
 import threading
 import functools
@@ -173,16 +172,9 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       self.simulator_state.is_engaged = self.simulated_car.sm['selfdriveState'].active
 
       if self.simulator_state.is_engaged:
-        _accel = self.simulated_car.sm['carControl'].actuators.accel
-        throttle_op = np.clip(_accel / 1.6, 0.0, 1.0)
-        brake_op = np.clip(-_accel / 4.0, 0.0, 1.0)
+        throttle_op = np.clip(self.simulated_car.sm['carControl'].actuators.accel / 1.6, 0.0, 1.0)
+        brake_op = np.clip(-self.simulated_car.sm['carControl'].actuators.accel / 4.0, 0.0, 1.0)
         steer_op = self.simulated_car.sm['carControl'].actuators.steeringAngleDeg
-
-        self._dbg_frame = getattr(self, "_dbg_frame", 0) + 1
-        if os.environ.get("CI") and self._dbg_frame % 50 == 0:
-          _ss = self.simulated_car.sm['selfdriveState']
-          print(f"[engage] accel={_accel:+.2f} throttle_op={throttle_op:.2f} steer={steer_op:+.1f} "
-                f"vEgo={self.simulator_state.speed:.2f} expMode={_ss.experimentalMode} state={int(_ss.state)}", flush=True)
 
         self.past_startup_engaged = True
       elif not self.past_startup_engaged and self.simulated_car.sm['selfdriveState'].engageable:
