@@ -52,6 +52,21 @@ jobs:
           uv pip install "git+https://github.com/commaai/metadrive.git@minimal" 2>&1 | tail -3 || \
             pip install "git+https://github.com/commaai/metadrive.git@minimal"
 
+      - name: Diagnose modeld + Metal standalone
+        continue-on-error: true
+        run: |
+          source "$GITHUB_WORKSPACE/.venv/bin/activate"
+          export CI=1 SIMULATION=1 NOBOARD=1 SKIP_FW_QUERY=1 PYTHONUNBUFFERED=1
+          python -c "from openpilot.selfdrive.test.helpers import set_params_enabled; set_params_enabled()" || true
+          ( python openpilot/selfdrive/modeld/modeld.py > /tmp/modeld.txt 2>&1 ) &
+          MP=$!
+          sleep 35
+          kill $MP 2>/dev/null || true; pkill -f modeld.py 2>/dev/null || true
+          echo "=== modeld standalone output (Metal/pkl init) ==="
+          head -100 /tmp/modeld.txt
+          echo "=== modeld errors ==="
+          grep -iE "metal|error|traceback|assert|fork|device|MTL|GPU|Exception|Segmentation|abort|pickle|pkl" /tmp/modeld.txt | head -30
+
       - name: Run FULL MetaDrive sim (manager + bridge) on macOS
         continue-on-error: true
         env:
