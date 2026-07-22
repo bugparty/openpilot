@@ -46,22 +46,33 @@ jobs:
           export CI=1
           ./tools/op.sh build || scons -j4
 
-      - name: Run openpilot manager in sim mode — does the stack RUN on macOS?
-        continue-on-error: true
+      - name: Install MetaDrive fork (excluded on aarch64 in pyproject)
         run: |
-          source "$GITHUB_WORKSPACE/.venv/bin/activate" 2>/dev/null || true
+          source "$GITHUB_WORKSPACE/.venv/bin/activate"
+          uv pip install "git+https://github.com/commaai/metadrive.git@minimal" 2>&1 | tail -3 || \
+            pip install "git+https://github.com/commaai/metadrive.git@minimal"
+
+      - name: Run FULL MetaDrive sim (manager + bridge) on macOS
+        continue-on-error: true
+        env:
+          METADRIVE_SIMPLE_RENDER: "1"
+          METADRIVE_NO_MSAA: "1"
+          METADRIVE_FLAT_TERRAIN_CARD: "1"
+          METADRIVE_RENDER_SCALE: "0.5"
+        run: |
+          source "$GITHUB_WORKSPACE/.venv/bin/activate"
           export CI=1 PYTHONUNBUFFERED=1
           cd openpilot/tools/sim
-          ./launch_openpilot.sh > /tmp/oplog.txt 2>&1 &
-          LPID=$!
-          sleep 60
-          echo "=== openpilot python daemons alive after 60s ==="
-          ps aux | grep -iE "work/openpilot.*\.py" | grep -v grep | grep -oE "[a-z_]+\.py" | sort | uniq -c | sort -rn | head -40
-          echo "=== full tracebacks in log ==="
-          awk '/Traceback \(most recent call last\)/{p=1} p{print} /Error|Exception/{if(p)print "----"} p&&/^[A-Za-z].*Error|^[A-Za-z].*Exception/{p=0}' /tmp/oplog.txt | head -120
-          echo "=== error one-liners ==="
-          grep -iE "no module|not found|failed to|abort|segmentation|panic|dyld|symbol not found|address already|permission denied" /tmp/oplog.txt | sort -u | head -40
-          kill $LPID 2>/dev/null || true
-          pkill -f manager.py 2>/dev/null || true
-          pkill -f "work/openpilot" 2>/dev/null || true
+          ( python -m pytest -s -o cache_dir=/tmp/pc tests/test_metadrive_bridge.py > /tmp/simtest.txt 2>&1 ) &
+          TPID=$!
+          # bound the run; macOS has no coreutils `timeout` by default
+          for i in $(seq 1 24); do kill -0 $TPID 2>/dev/null || break; sleep 10; done
+          kill $TPID 2>/dev/null || true
+          pkill -f manager.py 2>/dev/null || true; pkill -f "work/openpilot" 2>/dev/null || true
+          echo "=== metadrive render fps lines ==="; grep -iE "metadrive render fps" /tmp/simtest.txt | tail -5
+          echo "=== daemons that ran (from managerState / logs) ==="; grep -oiE "starting \w+|\w+d\.py" /tmp/simtest.txt | sort | uniq -c | sort -rn | head -30
+          echo "=== test result / assert ==="; grep -iE "PASSED|FAILED|assert|not running|CarEvents|exited with code|Bridge process" /tmp/simtest.txt | head -20
+          echo "=== tracebacks ==="
+          awk '/Traceback \(most recent call last\)/{p=1} p{print} p&&/^[A-Za-z_.]*(Error|Exception):/{print "----"; p=0}' /tmp/simtest.txt | head -140
+          echo "=== error one-liners ==="; grep -iE "no module|dyld|symbol not found|segmentation|abort|/proc|/sys|not found|failed to" /tmp/simtest.txt | sort -u | head -40
           echo "done"
