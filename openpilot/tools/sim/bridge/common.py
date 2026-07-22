@@ -103,6 +103,13 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
     self.simulated_car = SimulatedCar()
     self.simulated_sensors = SimulatedSensors(self.dual_camera)
 
+    # diagnostic-only: watch what the planner/model actually want (#30693 vehicle_not_moving)
+    try:
+      import openpilot.cereal.messaging as _messaging
+      self._dbg_sm = _messaging.SubMaster(['longitudinalPlan', 'modelV2'])
+    except Exception:
+      self._dbg_sm = None
+
     self._exit_event = threading.Event()
 
     self.simulated_car_thread = threading.Thread(target=rk_loop, args=(functools.partial(self.simulated_car.update, self.simulator_state),
@@ -182,8 +189,19 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
         try:
           self._dbgn = getattr(self, "_dbgn", 0) + 1
           if self._dbgn % 40 == 0:
-            print(f"[lng] accel={accel_cmd:+.3f} thr={throttle_op:.2f} steer={steer_op:+.1f} "
-                  f"vEgo={self.simulator_state.speed:.2f}", flush=True)
+            plan_v = plan_a = mdl_a = mdl_c = -99.0
+            has_lead = "?"
+            if self._dbg_sm is not None:
+              self._dbg_sm.update(0)
+              lp = self._dbg_sm['longitudinalPlan']
+              if len(lp.speeds): plan_v = lp.speeds[-1]
+              if len(lp.accels): plan_a = lp.accels[-1]
+              has_lead = lp.hasLead
+              act = self._dbg_sm['modelV2'].action
+              mdl_a, mdl_c = act.desiredAcceleration, act.desiredCurvature
+            print(f"[lng] accel={accel_cmd:+.3f} vEgo={self.simulator_state.speed:.2f} "
+                  f"planV={plan_v:.2f} planA={plan_a:+.3f} lead={has_lead} "
+                  f"mdlA={mdl_a:+.3f} mdlCurv={mdl_c:+.4f}", flush=True)
         except Exception:
           pass
 
