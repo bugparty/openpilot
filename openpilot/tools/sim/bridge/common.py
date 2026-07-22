@@ -221,9 +221,10 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
               tp = self._dbg_sm['modelV2'].meta.disengagePredictions.gasPressProbs
               throt_prob = tp[1] if len(tp) > 1 else -1.0
               ctl = self._dbg_sm['controlsState']
-              pcm_op = (f"allowThr={lpm.allowThrottle} shouldStop={lpm.shouldStop} "
-                        f"throtProb={throt_prob:.2f} forceDecel={ctl.forceDecel} "
-                        f"longState={ctl.longControlState} still={cs.standstill}")
+              sds = self._dbg_sm['selfdriveState']
+              pcm_op = (f"shouldStop={lpm.shouldStop} forceDecel={ctl.forceDecel} "
+                        f"longState={ctl.longControlState} state={sds.state} "
+                        f"alert='{sds.alertText1}|{sds.alertText2}'")
             print(f"[lng] accel={accel_cmd:+.3f} vEgo={self.simulator_state.speed:.2f} "
                   f"planV={plan_v:.2f} planA={plan_a:+.3f} lead={has_lead} src={long_src} "
                   f"vCruise={v_set} {pcm_op} mdlA={mdl_a:+.3f}", flush=True)
