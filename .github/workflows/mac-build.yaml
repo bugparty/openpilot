@@ -57,7 +57,7 @@ jobs:
           METADRIVE_SIMPLE_RENDER: "1"
           METADRIVE_NO_MSAA: "1"
           METADRIVE_FLAT_TERRAIN_CARD: "1"
-          METADRIVE_RENDER_SCALE: "0.25"
+          METADRIVE_RENDER_SCALE: "0.5"   # model needs legible lane lines now that it can actually see (NV12 fix)
           METADRIVE_SKY_CLEAR: "1"   # sky-color the white void so the model doesn't see a phantom lead
           BLOCK: "soundd"   # sound .wav assets are LFS-absent on the fork; not needed for the test
         run: |
