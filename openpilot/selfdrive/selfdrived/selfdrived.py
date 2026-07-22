@@ -333,7 +333,10 @@ class SelfdriveD:
           self.events.add(EventName.cameraMalfunction)
         elif not self.sm.all_freq_ok(self.camera_packets):
           self.events.add(EventName.cameraFrameRate)
-    if not REPLAY and self.rk.lagging:
+    if not REPLAY and not SIMULATION and self.rk.lagging:
+      # loop-rate lag is a device-health check; the sim on a slow CI runner is not
+      # hard real-time, so don't block entry on it (matches the other SIMULATION-gated
+      # device-health checks above). See issue #30693.
       self.events.add(EventName.selfdrivedLagging)
     if self.CP.openpilotLongitudinalControl:
       if self.sm['radarState'].radarErrors.canError:
