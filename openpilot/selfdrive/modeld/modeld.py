@@ -104,10 +104,12 @@ class ModelState:
           inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray] | None:
     for key in bufs.keys():
       yuv_size = self.frame_buf_params[key][3]
-      if self.WARP_DEV == 'METAL':
+      if self.WARP_DEV == 'METAL' or os.environ.get('MODELD_COPY_FRAMES'):
         # from_blob wraps the VisionIPC host pointer via newBufferWithBytesNoCopy, which
         # faults (objc_msgSend translation fault) on the paravirtual Metal device; copy
-        # the frame into a Metal tensor each call instead. See issue #30693.
+        # the frame into a device tensor each call instead. See issue #30693.
+        # MODELD_COPY_FRAMES extends this to other devices: CUDA hits an illegal
+        # memory access wrapping the VisionIPC host pointer in the sim.
         self.full_frames[key] = Tensor(np.frombuffer(bufs[key].data, dtype=np.uint8)[:yuv_size].copy(), device=self.WARP_DEV)
       else:
         ptr = np.frombuffer(bufs[key].data, dtype=np.uint8).ctypes.data
@@ -127,6 +129,13 @@ class ModelState:
     self.npy['big_tfm'][:,:] = transforms['big_img'][:,:]
 
     warped = self.warp(**{k: self.input_queues[k] for k in WARP_INPUTS}, frame=self.full_frames['img'], big_frame=self.full_frames['big_img'])
+
+    # DIAGNOSTIC (#30693): dump the exact post-warp tensor the network ingests
+    if os.environ.get('MODELD_DUMP_WARP'):
+      self._warp_dumps = getattr(self, '_warp_dumps', 0) + 1
+      if self._warp_dumps in (100, 200, 300):
+        np.save(f"/tmp/warped_{self._warp_dumps}.npy", warped.numpy())
+        print(f"[warpdump] saved /tmp/warped_{self._warp_dumps}.npy shape={warped.shape}", flush=True)
 
     outs, = self.run_policy(
       **{k: self.input_queues[k] for k in POLICY_INPUTS if k in self.input_queues}, warped=warped

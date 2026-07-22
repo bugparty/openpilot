@@ -54,7 +54,8 @@ class MetaDriveBridge(SimulatorBridge):
   def __init__(self, dual_camera, high_quality, test_duration=math.inf, test_run=False):
     super().__init__(dual_camera, high_quality)
 
-    self.should_render = False
+    # diagnostic: pop a metadrive window to watch the drive (local runs with a display)
+    self.should_render = bool(os.environ.get("METADRIVE_RENDER_WINDOW"))
     self.test_run = test_run
     self.test_duration = test_duration if self.test_run else math.inf
 

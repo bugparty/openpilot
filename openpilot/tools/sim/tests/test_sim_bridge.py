@@ -92,3 +92,11 @@ class TestSimBridgeBase(OpenpilotTestCase):
 
     for p in reversed(self.processes):
       p.kill()
+
+    # reap the children; a GC'd un-waited Popen raises an unraisable warning,
+    # which pytest turns into a test-run error (non-zero exit) despite passing
+    for p in reversed(self.processes):
+      if hasattr(p, "wait"):  # subprocess.Popen
+        p.wait(timeout=15)
+      else:  # multiprocessing.Process
+        p.join(15)

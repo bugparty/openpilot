@@ -5,7 +5,15 @@ import numpy as np
 from msgq.visionipc import VisionIpcServer, VisionStreamType
 from openpilot.cereal import messaging
 
+from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 from openpilot.tools.sim.lib.common import W, H
+
+# modeld's tinygrad warp kernels bake the device (VENUS-aligned) NV12 layout at
+# compile time: stride=align(W,128), uv_offset=stride*align(H,32). A packed
+# stride=W buffer therefore reads as row-shifted garbage (and out-of-bounds) to
+# the model -- the sim must allocate and fill device-identical buffers. #30693
+STRIDE, Y_HEIGHT, UV_HEIGHT, YUV_SIZE = get_nv12_info(W, H)
+UV_OFFSET = STRIDE * Y_HEIGHT
 
 
 def rgb_to_nv12(rgb):
@@ -33,7 +41,11 @@ def rgb_to_nv12(rgb):
   uv[:, 0::2] = u
   uv[:, 1::2] = v
 
-  return np.concatenate([y.ravel(), uv.ravel()]).tobytes()
+  # pack into the VENUS-aligned layout the model warp expects (row-padded planes)
+  buf = np.zeros(YUV_SIZE, dtype=np.uint8)
+  buf[:h * STRIDE].reshape(h, STRIDE)[:, :w] = y
+  buf[UV_OFFSET:UV_OFFSET + (h // 2) * STRIDE].reshape(h // 2, STRIDE)[:, :w] = uv
+  return buf.tobytes()
 
 
 class Camerad:
@@ -45,9 +57,10 @@ class Camerad:
     self.frame_wide_id = 0
     self.vipc_server = VisionIpcServer("camerad")
 
-    self.vipc_server.create_buffers(VisionStreamType.VISION_STREAM_ROAD, 5, W, H)
+    # device-identical NV12 buffers (same call as system/camerad/cameras/camera_common.cc)
+    self.vipc_server.create_buffers_with_sizes(VisionStreamType.VISION_STREAM_ROAD, 5, W, H, YUV_SIZE, STRIDE, UV_OFFSET)
     if dual_camera:
-      self.vipc_server.create_buffers(VisionStreamType.VISION_STREAM_WIDE_ROAD, 5, W, H)
+      self.vipc_server.create_buffers_with_sizes(VisionStreamType.VISION_STREAM_WIDE_ROAD, 5, W, H, YUV_SIZE, STRIDE, UV_OFFSET)
 
     self.vipc_server.start_listener()
 

@@ -19,4 +19,6 @@ class TestMetaDriveBridge(TestSimBridgeBase):
 
   def create_bridge(self):
     assert MetaDriveBridge is not None
-    return MetaDriveBridge(False, False, self.test_duration, True)
+    import os
+    dual = bool(os.environ.get("SIM_DUAL_CAMERA"))  # diagnose single-cam zero-curvature (#30693)
+    return MetaDriveBridge(dual, False, self.test_duration, True)

@@ -187,8 +187,13 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           leads = mv.leadsV3
           lp = max((ld.prob for ld in leads), default=-1.0)
           lx = leads[0].x[0] if len(leads) and len(leads[0].x) else -1.0
+          # perception vs action-head split: does the model SEE lanes / plan a curved path?
+          lane_probs = ",".join(f"{p:.2f}" for p in mv.laneLineProbs) if len(mv.laneLineProbs) else "none"
+          path_y_far = mv.position.y[-1] if len(mv.position.y) else float("nan")
+          path_x_far = mv.position.x[-1] if len(mv.position.x) else float("nan")
           print(f"[mdl] engaged={self.simulator_state.is_engaged} leadProb={lp:.2f} leadX={lx:.1f} "
-                f"mdlA={mv.action.desiredAcceleration:+.3f} mdlCurv={mv.action.desiredCurvature:+.4f}", flush=True)
+                f"mdlA={mv.action.desiredAcceleration:+.3f} mdlCurv={mv.action.desiredCurvature:+.5f} "
+                f"lanes=[{lane_probs}] pathFar=({path_x_far:.0f},{path_y_far:+.1f})", flush=True)
       except Exception:
         pass
 
@@ -227,7 +232,11 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
                         f"alert='{sds.alertText1}|{sds.alertText2}'")
             print(f"[lng] accel={accel_cmd:+.3f} vEgo={self.simulator_state.speed:.2f} "
                   f"planV={plan_v:.2f} planA={plan_a:+.3f} lead={has_lead} src={long_src} "
-                  f"vCruise={v_set} {pcm_op} mdlA={mdl_a:+.3f}", flush=True)
+                  f"vCruise={v_set} {pcm_op} mdlA={mdl_a:+.3f} "
+                  f"steerCmd={steer_op:+.1f} simSteer={self.simulator_state.steering_angle:+.1f} mdlCurv={mdl_c:+.5f} "
+                  f"lat={self.simulated_car.sm['carControl'].latActive} "
+                  f"torq={self.simulated_car.sm['carControl'].actuators.torque:+.2f} "
+                  f"desCurv={ctl.desiredCurvature:+.5f}", flush=True)
         except Exception:
           pass
 
