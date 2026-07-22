@@ -78,6 +78,14 @@ jobs:
           awk '/Traceback \(most recent call last\)/{p=1} p{print} p&&/^[A-Za-z_.]*(Error|Exception):/{print "----"; p=0}' /tmp/simtest.txt | head -140
           echo "=== error one-liners ==="; grep -iE "no module|dyld|symbol not found|segmentation|abort|/proc|/sys|not found|failed to" /tmp/simtest.txt | sort -u | head -40
           echo "=== modeld lifecycle from simtest ==="; grep -iE "modeld|loading model|models loaded|vision stream|connected main|died|unexpectedly|Metal|objc\[|MTL" /tmp/simtest.txt | grep -viE "render fps|cameraOdometry ignored" | head -30
-          echo "=== swaglog files (modeld runtime crash) ==="
-          for d in "$HOME/.comma/log" "$HOME/.comma/media/0/realdata"; do find "$d" -name 'swaglog*' 2>/dev/null; done | while read -r f; do echo "-- $f --"; grep -aiE "modeld|loading model|models loaded|Metal|MTL|objc\[|Segmentation|abort|died|Traceback|Error" "$f" 2>/dev/null | tail -25; done
+          echo "=== macOS crash reports (modeld/python signal crash) ==="
+          sleep 5  # let the crash reporter flush
+          for d in "$HOME/Library/Logs/DiagnosticReports" "/Library/Logs/DiagnosticReports"; do
+            ls -t "$d"/*.ips "$d"/*.crash 2>/dev/null | head -5
+          done | while read -r r; do
+            echo "==== $r ===="
+            # .ips is JSON+JSON; pull the signal, faulting thread, and top frames
+            grep -aoE "\"(exception|termination|signal|reason)\"[^,}]*" "$r" 2>/dev/null | head -8
+            grep -aiE "python|modeld|Metal|MTL|libobjc|tinygrad|MPSGraph|IOGPU|AGX|dispatch|__pthread" "$r" 2>/dev/null | head -25
+          done
           echo "done"
