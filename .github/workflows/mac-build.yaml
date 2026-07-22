@@ -57,7 +57,7 @@ jobs:
           METADRIVE_SIMPLE_RENDER: "1"
           METADRIVE_NO_MSAA: "1"
           METADRIVE_FLAT_TERRAIN_CARD: "1"
-          METADRIVE_RENDER_SCALE: "0.5"
+          METADRIVE_RENDER_SCALE: "0.25"
           BLOCK: "soundd"   # sound .wav assets are LFS-absent on the fork; not needed for the test
         run: |
           set +e   # default shell is `bash -e`; manage the exit code ourselves so a
