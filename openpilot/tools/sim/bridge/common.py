@@ -214,7 +214,10 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           pass
 
         accel_cmd = self.simulated_car.sm['carControl'].actuators.accel
-        throttle_op = np.clip(accel_cmd / 1.6, 0.0, 1.0)
+        # metadrive's throttle->thrust response is stronger than accel/1.6 assumes
+        # (vEgo overshoots planV by ~35%); allow tuning the mapping. #30693
+        _thr_div = float(os.environ.get("SIM_ACCEL_TO_THROTTLE", "1.6"))
+        throttle_op = np.clip(accel_cmd / _thr_div, 0.0, 1.0)
         brake_op = np.clip(-accel_cmd / 4.0, 0.0, 1.0)
         steer_op = self.simulated_car.sm['carControl'].actuators.steeringAngleDeg
 
