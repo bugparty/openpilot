@@ -172,7 +172,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       # DIAGNOSTIC (#30693): dump a few of the exact RGB frames the model consumes,
       # so we can eyeball render artifacts (e.g. the top-right color block) and
       # exposure that may be triggering a phantom lead. Gated by env; one-shot.
-      if os.environ.get("METADRIVE_DUMP_FRAMES") and render_frames in (120, 300, 500, 650, 800):
+      if os.environ.get("METADRIVE_DUMP_FRAMES") and render_frames in (60, 120, 200, 300):
         try:
           from PIL import Image
           dump_dir = os.environ.get("METADRIVE_DUMP_DIR", "/tmp")
