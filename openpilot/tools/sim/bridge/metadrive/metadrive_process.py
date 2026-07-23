@@ -96,13 +96,21 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     if not isinstance(img, np.ndarray):
       img = img.get() # convert cupy array to numpy
     if img.shape[0] != H or img.shape[1] != W:
-      # nearest-neighbor upscale; render size must divide the camera size evenly
-      img = img.repeat(H // img.shape[0], axis=0).repeat(W // img.shape[1], axis=1)
+      if H % img.shape[0] == 0 and W % img.shape[1] == 0:
+        # fast path: integer nearest-neighbor upscale (render size divides camera size)
+        img = img.repeat(H // img.shape[0], axis=0).repeat(W // img.shape[1], axis=1)
+      else:
+        # arbitrary render scale (e.g. 0.6): bilinear resize up to the camera size
+        from PIL import Image as _Image
+        img = np.asarray(_Image.fromarray(img).resize((W, H), _Image.BILINEAR))
     return img
 
   rk = Ratekeeper(100, None)
 
-  steer_ratio = 8
+  # lower steer_ratio => the sim vehicle turns more per unit openpilot steer command.
+  # the CI software render is perception-limited (weak model curvature in curves), so
+  # give the plant more steering authority to still track the loop. #30693
+  steer_ratio = float(os.environ.get("SIM_STEER_RATIO", "8"))
   vc = [0,0]
 
   render_frames = 0
