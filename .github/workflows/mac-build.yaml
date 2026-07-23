@@ -52,6 +52,12 @@ jobs:
           uv pip install "git+https://github.com/commaai/metadrive.git@minimal" 2>&1 | tail -3 || \
             pip install "git+https://github.com/commaai/metadrive.git@minimal"
 
+      - name: Probe acados long MPC standalone (does the solver work on this host at all?)
+        run: |
+          source "$GITHUB_WORKSPACE/.venv/bin/activate"
+          cd openpilot
+          python tools/sim/tests/long_mpc_probe.py
+
       - name: Run FULL MetaDrive sim (manager + bridge) on macOS
         env:
           METADRIVE_SIMPLE_RENDER: "1"
@@ -59,6 +65,7 @@ jobs:
           METADRIVE_FLAT_TERRAIN_CARD: "1"
           METADRIVE_RENDER_SCALE: "0.5"   # model needs legible lane lines now that it can actually see (NV12 fix)
           METADRIVE_SKY_CLEAR: "1"   # sky-color the white void so the model doesn't see a phantom lead
+          LONG_MPC_DUMP: "1"   # print x0/params on every failed QP solve (#30693)
           BLOCK: "soundd"   # sound .wav assets are LFS-absent on the fork; not needed for the test
         run: |
           set +e   # default shell is `bash -e`; manage the exit code ourselves so a
