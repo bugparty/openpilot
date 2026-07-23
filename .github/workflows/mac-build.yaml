@@ -110,7 +110,7 @@ jobs:
           METADRIVE_SIMPLE_RENDER: "1"
           METADRIVE_NO_MSAA: "1"
           METADRIVE_FLAT_TERRAIN_CARD: "1"
-          METADRIVE_RENDER_SCALE: "0.5"   # 1/2 res holds 20fps on the software renderer; model keeps the lane
+          METADRIVE_RENDER_SCALE: "0.25"  # 1/4 res: software render ~4x faster -> fresher camera frames -> less curve drift under CI render latency (#30693)
           METADRIVE_SKY_CLEAR: "1"   # sky-color the white void so the model doesn't see a phantom lead
           LONG_MPC_DUMP: "1"   # print x0/params on every failed QP solve (#30693)
           SIM_ACCEL_TO_THROTTLE: "2.5"  # metadrive thrust response; 1.6 overshoots planV by ~35% -> out_of_lane
