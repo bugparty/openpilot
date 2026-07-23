@@ -80,8 +80,6 @@ class SimulatedCar:
     self.pm.send('can', can_list_to_can_capnp(msg))
 
   def send_panda_state(self, simulator_state):
-    self.sm.update(0)
-
     if self.params.get_bool("ObdMultiplexingEnabled") != self.obd_multiplexing:
       self.obd_multiplexing = not self.obd_multiplexing
       self.params.put_bool("ObdMultiplexingChanged", True, block=True)
@@ -100,6 +98,12 @@ class SimulatedCar:
 
   def update(self, simulator_state: SimulatorState):
     try:
+      # refresh subscribed messages every tick: sm.update used to run only inside
+      # send_panda_state (2 Hz), leaving carControl.actuators up to 500ms stale for
+      # the bridge's throttle/brake/steer application -- huge actuation latency
+      # (longitudinal overshoot, weaving). #30693
+      self.sm.update(0)
+
       self.send_can_messages(simulator_state)
 
       if self.idx % 50 == 0: # only send panda states at 2hz
