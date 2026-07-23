@@ -218,18 +218,10 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           if self._dbg_sm is not None:
             self._dbg_sm.update(0)
             v_cruise_ms = self._dbg_sm['carState'].vCruise * CV.KPH_TO_MS
-            cap = v_cruise_ms + 0.5 if 0 < v_cruise_ms < 70 else 1e9
-            cap = min(cap, float(os.environ.get("SIM_MAX_SPEED", "1e9")))
-            # curve-aware slowdown: the out_of_lane failures are all curve drift under
-            # control-loop lag (verified: red jobs had healthy 20fps, drifted at ~11.6 m/s).
-            # When the model plans meaningful curvature (a curve ahead), cap speed lower so
-            # the lagged steering has time to track it; run faster on straights to clear
-            # curves before drift accumulates. #30693
-            curv = abs(self._dbg_sm['modelV2'].action.desiredCurvature)
-            curve_cap = float(os.environ.get("SIM_CURVE_SPEED", "0"))
-            if curve_cap > 0 and curv > 0.0025:
-              cap = min(cap, curve_cap)
-            if self.simulator_state.speed > cap:
+            # only prevent the sim car from coasting PAST openpilot's own set speed (which
+            # openpilot itself would never exceed) -- this corrects a metadrive throttle
+            # overshoot, it does NOT cap below what openpilot commands. #30693
+            if 0 < v_cruise_ms < 70 and self.simulator_state.speed > v_cruise_ms + 0.5:
               throttle_op = 0.0
         except Exception:
           pass

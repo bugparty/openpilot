@@ -102,8 +102,6 @@ jobs:
           METADRIVE_SKY_CLEAR: "1"   # sky-color the white void so the model doesn't see a phantom lead
           LONG_MPC_DUMP: "1"   # print x0/params on every failed QP solve (#30693)
           SIM_ACCEL_TO_THROTTLE: "2.5"  # metadrive thrust response; 1.6 overshoots planV by ~35% -> out_of_lane
-          SIM_MAX_SPEED: "9.5"  # straight-line cap, below the ~11.6 drift point (#30693)
-          SIM_CURVE_SPEED: "6.5"  # slow to 6.5 m/s when the model plans a curve, so the lagged steering can track it (#30693)
           BLOCK: "soundd"   # sound .wav assets are LFS-absent on the fork; not needed for the test
         run: |
           set +e   # default shell is `bash -e`; manage the exit code ourselves so a
