@@ -62,7 +62,14 @@ jobs:
           cmake --build /tmp/blasfeo/build -j3 2>&1 | tail -2
           ACADOS_LIB=$(find "$GITHUB_WORKSPACE/.venv" -name "libblasfeo.dylib" -path "*acados*" | head -1)
           echo "replacing: $ACADOS_LIB"
+          echo "build artifacts:"; find /tmp/blasfeo/build -name "libblasfeo*" | head -5
           NEW=$(find /tmp/blasfeo/build -name "libblasfeo*.dylib" | head -1)
+          if [ -z "$NEW" ]; then
+            # cmake produced a static lib only; wrap it into a dylib
+            AR=$(find /tmp/blasfeo/build -name "libblasfeo.a" | head -1)
+            clang -dynamiclib -arch arm64 -o /tmp/blasfeo/libblasfeo.dylib -Wl,-force_load,"$AR" -lm
+            NEW=/tmp/blasfeo/libblasfeo.dylib
+          fi
           install_name_tool -id @rpath/libblasfeo.dylib "$NEW"
           cp "$NEW" "$ACADOS_LIB"
           codesign -f -s - "$ACADOS_LIB"
