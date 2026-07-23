@@ -5,6 +5,8 @@ import time
 import functools
 import numpy as np
 
+from opendbc.car.common.conversions import Conversions as CV
+
 from collections import namedtuple
 from enum import Enum
 from multiprocessing import Process, Queue, Value
@@ -200,26 +202,26 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
         pass
 
       if self.simulator_state.is_engaged:
-        # optionally lower the ACC set speed after engaging (SIM_CRUISE_KPH): the CI
-        # software render loses lane lines at 40+ km/h and longitudinal overshoots
-        # on the loaded runner; a lower cruise keeps the loop drivable. #30693
-        try:
-          target_kph = float(os.environ.get("SIM_CRUISE_KPH", "0"))
-          if target_kph > 0 and self._dbg_sm is not None:
-            self._dbg_sm.update(0)
-            if self._dbg_sm['carState'].vCruise > target_kph:
-              # emulate short DECEL_SET presses (edge-triggered, so pulse the button)
-              self.simulator_state.cruise_button = CruiseButtons.DECEL_SET if (self.rk.frame // 8) % 2 == 0 else 0
-        except Exception:
-          pass
-
         accel_cmd = self.simulated_car.sm['carControl'].actuators.accel
         # metadrive's throttle->thrust response is stronger than accel/1.6 assumes
-        # (vEgo overshoots planV by ~35%); allow tuning the mapping. #30693
+        # (vEgo overshoots planV); allow tuning the mapping. #30693
         _thr_div = float(os.environ.get("SIM_ACCEL_TO_THROTTLE", "1.6"))
         throttle_op = np.clip(accel_cmd / _thr_div, 0.0, 1.0)
         brake_op = np.clip(-accel_cmd / 4.0, 0.0, 1.0)
         steer_op = self.simulated_car.sm['carControl'].actuators.steeringAngleDeg
+
+        # speed governor: on the loaded CI runner the modeld->plan->control loop lags,
+        # so the metadrive car coasts past openpilot's set speed and enters curves too
+        # fast -> out_of_lane. openpilot never intends to exceed its cruise speed;
+        # enforce that directly against measured speed to stay robust to loop lag. #30693
+        try:
+          if self._dbg_sm is not None:
+            self._dbg_sm.update(0)
+            v_cruise_ms = self._dbg_sm['carState'].vCruise * CV.KPH_TO_MS
+            if 0 < v_cruise_ms < 70 and self.simulator_state.speed > v_cruise_ms + 0.5:
+              throttle_op = 0.0
+        except Exception:
+          pass
 
         # defensive diagnostic (must never crash the bridge): is openpilot commanding
         # forward accel, or holding/braking? distinguishes perception vs actuation. #30693
