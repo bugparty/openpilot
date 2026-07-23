@@ -61,6 +61,7 @@ class SimulatorBridge(ABC):
 
     self.past_startup_engaged = False
     self.startup_button_prev = True
+    self._sim_max_speed = float(os.environ.get("SIM_MAX_SPEED", "1e9"))  # speed governor cap (m/s)
 
     self.test_run = False
 
@@ -212,20 +213,11 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
 
         # speed governor: on the loaded CI runner the modeld->plan->control loop lags,
         # so the metadrive car coasts past openpilot's set speed and enters curves too
-        # fast -> out_of_lane. openpilot never intends to exceed its cruise speed;
-        # enforce that directly against measured speed to stay robust to loop lag.
-        # SIM_MAX_SPEED (m/s) caps below the set speed for extra curve margin on the
-        # cold-start first lap (where warmup lag makes overshoot worst). #30693
-        try:
-          if self._dbg_sm is not None:
-            self._dbg_sm.update(0)
-            v_cruise_ms = self._dbg_sm['carState'].vCruise * CV.KPH_TO_MS
-            cap = v_cruise_ms + 0.5 if 0 < v_cruise_ms < 70 else 1e9
-            cap = min(cap, float(os.environ.get("SIM_MAX_SPEED", "1e9")))
-            if self.simulator_state.speed > cap:
-              throttle_op = 0.0
-        except Exception:
-          pass
+        # fast -> out_of_lane. SIM_MAX_SPEED (m/s) caps speed for curve margin, enforced
+        # against the bridge's own fresh speed so it's robust to loop lag. Compared
+        # directly here (no per-frame SubMaster drain) to keep the 100Hz loop cheap. #30693
+        if self.simulator_state.speed > self._sim_max_speed:
+          throttle_op = 0.0
 
         # defensive diagnostic (must never crash the bridge): is openpilot commanding
         # forward accel, or holding/braking? distinguishes perception vs actuation. #30693

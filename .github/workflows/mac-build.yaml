@@ -93,6 +93,18 @@ jobs:
           cd openpilot
           python tools/sim/tests/long_mpc_probe.py
 
+      - name: Free CPU -- stop CoreSimulator daemons (iOS sim disk services waste ~1 core)
+        run: |
+          # CPU sampling showed simdiskimaged (~67%) + diskimagesiod (~33%) eating ~1 of
+          # the 3 cores; this job does no iOS work, so shut CoreSimulator down to give the
+          # control loop (plannerd/controlsd, seen starved at <1% CPU) more headroom. #30693
+          sudo xcrun simctl shutdown all 2>/dev/null || true
+          sudo pkill -9 -f CoreSimulator 2>/dev/null || true
+          sudo launchctl bootout system/com.apple.CoreSimulator.simdiskimaged 2>/dev/null || true
+          sudo launchctl disable system/com.apple.CoreSimulator.simdiskimaged 2>/dev/null || true
+          sudo killall -9 simdiskimaged diskimagesiod 2>/dev/null || true
+          echo "CoreSimulator processes after shutdown:"; pgrep -fl "simdiskimaged|diskimagesiod|CoreSimulator" || echo "(none)"
+
       - name: Run FULL MetaDrive sim (manager + bridge) on macOS
         env:
           METADRIVE_SIMPLE_RENDER: "1"
