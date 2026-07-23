@@ -219,10 +219,16 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
             self._dbg_sm.update(0)
             v_cruise_ms = self._dbg_sm['carState'].vCruise * CV.KPH_TO_MS
             cap = v_cruise_ms + 0.5 if 0 < v_cruise_ms < 70 else 1e9
-            # the out_of_lane failures are specifically when the car reaches full speed
-            # (~11.6 m/s) and drifts before openpilot's adaptive curve-slowdown catches it
-            # (verified: red jobs had healthy 20fps, peak vEgo 11.6). Hold a bit below that.
             cap = min(cap, float(os.environ.get("SIM_MAX_SPEED", "1e9")))
+            # curve-aware slowdown: the out_of_lane failures are all curve drift under
+            # control-loop lag (verified: red jobs had healthy 20fps, drifted at ~11.6 m/s).
+            # When the model plans meaningful curvature (a curve ahead), cap speed lower so
+            # the lagged steering has time to track it; run faster on straights to clear
+            # curves before drift accumulates. #30693
+            curv = abs(self._dbg_sm['modelV2'].action.desiredCurvature)
+            curve_cap = float(os.environ.get("SIM_CURVE_SPEED", "0"))
+            if curve_cap > 0 and curv > 0.0025:
+              cap = min(cap, curve_cap)
             if self.simulator_state.speed > cap:
               throttle_op = 0.0
         except Exception:
