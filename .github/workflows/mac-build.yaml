@@ -93,18 +93,6 @@ jobs:
           cd openpilot
           python tools/sim/tests/long_mpc_probe.py
 
-      - name: Free CPU -- stop CoreSimulator daemons (iOS sim disk services waste ~1 core)
-        run: |
-          # CPU sampling showed simdiskimaged (~67%) + diskimagesiod (~33%) eating ~1 of
-          # the 3 cores; this job does no iOS work, so shut CoreSimulator down to give the
-          # control loop (plannerd/controlsd, seen starved at <1% CPU) more headroom. #30693
-          sudo xcrun simctl shutdown all 2>/dev/null || true
-          sudo pkill -9 -f CoreSimulator 2>/dev/null || true
-          sudo launchctl bootout system/com.apple.CoreSimulator.simdiskimaged 2>/dev/null || true
-          sudo launchctl disable system/com.apple.CoreSimulator.simdiskimaged 2>/dev/null || true
-          sudo killall -9 simdiskimaged diskimagesiod 2>/dev/null || true
-          echo "CoreSimulator processes after shutdown:"; pgrep -fl "simdiskimaged|diskimagesiod|CoreSimulator" || echo "(none)"
-
       - name: Run FULL MetaDrive sim (manager + bridge) on macOS
         env:
           METADRIVE_SIMPLE_RENDER: "1"
@@ -122,15 +110,6 @@ jobs:
           source "$GITHUB_WORKSPACE/.venv/bin/activate"
           export CI=1 PYTHONUNBUFFERED=1
           cd openpilot/tools/sim
-          # sample per-process CPU during the run: is the SOFTWARE RENDER (metadrive
-          # process, LLVMpipe) starving the control loop (modeld/plannerd/controlsd)
-          # on the 3-core VM? quantifies whether HW render offload would cut the lag. #30693
-          ( for k in $(seq 1 40); do
-              echo "=== @t=$k ==="
-              ps -Ao %cpu,pid,command 2>/dev/null | sort -rn | head -14
-              sleep 1.5
-            done > /tmp/cpusample.txt 2>&1 ) &
-          CPUMON=$!
           # Run pytest in the FOREGROUND so its exit code is the authoritative pass/fail
           # signal (a backgrounded `... &` subshell swallows the exit code -> false green).
           # macOS has no coreutils `timeout`, so a background watchdog kills a hang.
@@ -138,14 +117,13 @@ jobs:
           PYPID=$!
           ( sleep 300; kill -9 "$PYPID" 2>/dev/null ) & WDOG=$!
           wait "$PYPID"; CODE=$?
-          kill "$WDOG" 2>/dev/null || true; kill "$CPUMON" 2>/dev/null || true
+          kill "$WDOG" 2>/dev/null || true
           pkill -f manager.py 2>/dev/null || true; pkill -f "work/openpilot" 2>/dev/null || true
           # HARD ASSERT against a hollow green: a SKIPPED test_driving exits 0. Require a real pass.
           if ! grep -qaE "1 passed" /tmp/simtest.txt; then
             echo "!!! test_driving did NOT pass (skipped or failed) -- forcing failure"; CODE=1
           fi
           echo "=== pytest summary (authoritative) ==="; grep -aE " passed| failed| error| skipped" /tmp/simtest.txt | tail -3
-          echo "=== CPU by process (software render vs control loop) ==="; cp /tmp/cpusample.txt "$GITHUB_WORKSPACE/cpusample.txt" 2>/dev/null || true; tail -4 /tmp/cpusample.txt 2>/dev/null | tr '|' '\n' | grep -aiE "python|render|metadrive|%CPU" | head -20
           echo "=== render fps ==="; grep -iaE "metadrive render fps" /tmp/simtest.txt | tail -3
           echo "=== assert / CarEvents / failure states ==="; grep -aiE "AssertionError|FAILED |CarEvents '\[|Failure states|not running '\[|did not engage" /tmp/simtest.txt | head -10
           echo "=== tracebacks ==="; awk '/Traceback \(most recent call last\)/{p=1} p{print} p&&/^[A-Za-z_.]*(Error|Exception):/{print "----"; p=0}' /tmp/simtest.txt | head -80
@@ -163,9 +141,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: simtest-full-log
-          path: |
-            simtest_full.txt
-            cpusample.txt
+          path: simtest_full.txt
           if-no-files-found: warn
 
       - name: Upload model-input frames
