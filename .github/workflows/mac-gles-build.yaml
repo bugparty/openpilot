@@ -1,0 +1,52 @@
+name: mac-gles-build
+
+# Hardware-render path for #30693: can we build panda3d WITH the GLES2 backend on
+# macOS so it can render through ANGLE (GL ES -> Metal, hardware) instead of Apple's
+# software GL? The pip wheel ships only libpandagl.dylib (desktop GL, software on the
+# paravirtual GPU). This probe attempts the GLES2 build and reports the outcome.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ mac-gles-build ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - name: Locate ANGLE (EGL/GLESv2 headers+libs from Chrome) and clone panda3d
+        run: |
+          sw_vers; uname -m; python3 --version
+          FW="/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Libraries"
+          ls -la "$FW"/libEGL.dylib "$FW"/libGLESv2.dylib
+          git clone --depth 1 https://github.com/panda3d/panda3d.git /tmp/panda3d
+          echo "=== does makepanda expose gles2 / egl options? ==="
+          grep -nE "use-gles2|use-egl|GLES2|HAVE_GLES|no-gl\b" /tmp/panda3d/makepanda/makepanda.py | head -20 || true
+          echo "=== is there an egldisplay / glesgsg source for macOS? ==="
+          ls /tmp/panda3d/panda/src/egldisplay 2>/dev/null | head || echo "(no egldisplay dir)"
+          ls /tmp/panda3d/panda/src/glesgsg 2>/dev/null | head || echo "(no glesgsg dir)"
+
+      - name: Try to build panda3d with GLES2 + EGL against ANGLE
+        run: |
+          set -x
+          FW="/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Libraries"
+          # stage ANGLE EGL/GLES2 headers: panda3d needs EGL/egl.h and GLES2/gl2.h.
+          # ANGLE ships them in its include tree; if Chrome lacks headers, fetch from the
+          # Khronos registry (API-compatible with ANGLE's ABI).
+          mkdir -p /tmp/gles/include/EGL /tmp/gles/include/GLES2 /tmp/gles/include/KHR /tmp/gles/lib
+          cp "$FW"/libEGL.dylib "$FW"/libGLESv2.dylib /tmp/gles/lib/
+          for h in "EGL/egl.h" "EGL/eglplatform.h" "GLES2/gl2.h" "GLES2/gl2ext.h" "GLES2/gl2platform.h" "KHR/khrplatform.h"; do
+            curl -sfL "https://registry.khronos.org/EGL/api/$h" -o "/tmp/gles/include/$h" 2>/dev/null || \
+            curl -sfL "https://registry.khronos.org/OpenGL/api/$h" -o "/tmp/gles/include/$h" 2>/dev/null || echo "miss $h"
+          done
+          ls -R /tmp/gles/include | head -30
+          cd /tmp/panda3d
+          python3 -m pip install --quiet setuptools 2>/dev/null || true
+          # attempt the build: enable gles2+egl, disable desktop GL, point at ANGLE.
+          python3 makepanda/makepanda.py --outputdir /tmp/p3built \
+            --no-gl --gles2 --use-gles2 --use-egl \
+            --thirdparty /tmp/panda3d/thirdparty \
+            --python-incdir "$(python3 -c 'import sysconfig;print(sysconfig.get_path("include"))')" \
+            $(echo) 2>&1 | tail -60 || true
+          echo "=== did we get libpandagles2? ==="
+          find /tmp/p3built -iname "*gles2*" -o -iname "*egldisplay*" 2>/dev/null | head || echo "(none built)"
