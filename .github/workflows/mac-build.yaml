@@ -92,6 +92,7 @@ jobs:
           METADRIVE_RENDER_SCALE: "0.5"   # model needs legible lane lines now that it can actually see (NV12 fix)
           METADRIVE_SKY_CLEAR: "1"   # sky-color the white void so the model doesn't see a phantom lead
           LONG_MPC_DUMP: "1"   # print x0/params on every failed QP solve (#30693)
+          SIM_CRUISE_KPH: "28"  # software render loses lanes at 40+ km/h; keep the loop drivable
           BLOCK: "soundd"   # sound .wav assets are LFS-absent on the fork; not needed for the test
         run: |
           set +e   # default shell is `bash -e`; manage the exit code ourselves so a

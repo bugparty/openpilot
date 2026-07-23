@@ -1,3 +1,4 @@
+import os
 import signal
 import threading
 import time
@@ -199,6 +200,19 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
         pass
 
       if self.simulator_state.is_engaged:
+        # optionally lower the ACC set speed after engaging (SIM_CRUISE_KPH): the CI
+        # software render loses lane lines at 40+ km/h and longitudinal overshoots
+        # on the loaded runner; a lower cruise keeps the loop drivable. #30693
+        try:
+          target_kph = float(os.environ.get("SIM_CRUISE_KPH", "0"))
+          if target_kph > 0 and self._dbg_sm is not None:
+            self._dbg_sm.update(0)
+            if self._dbg_sm['carState'].vCruise > target_kph:
+              # emulate short DECEL_SET presses (edge-triggered, so pulse the button)
+              self.simulator_state.cruise_button = CruiseButtons.DECEL_SET if (self.rk.frame // 8) % 2 == 0 else 0
+        except Exception:
+          pass
+
         accel_cmd = self.simulated_car.sm['carControl'].actuators.accel
         throttle_op = np.clip(accel_cmd / 1.6, 0.0, 1.0)
         brake_op = np.clip(-accel_cmd / 4.0, 0.0, 1.0)
