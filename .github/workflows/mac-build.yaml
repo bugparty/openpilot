@@ -49,8 +49,17 @@ jobs:
       - name: Install MetaDrive fork (excluded on aarch64 in pyproject)
         run: |
           source "$GITHUB_WORKSPACE/.venv/bin/activate"
-          uv pip install "git+https://github.com/commaai/metadrive.git@minimal" 2>&1 | tail -3 || \
-            pip install "git+https://github.com/commaai/metadrive.git@minimal"
+          # retry: the git fetch occasionally hits "Could not resolve host: github.com"
+          ok=""
+          for a in 1 2 3 4 5; do
+            if uv pip install "git+https://github.com/commaai/metadrive.git@minimal" 2>&1 | tail -3; then ok=1; break; fi
+            echo "metadrive install attempt $a failed, retrying in 10s..."; sleep 10
+          done
+          [ -n "$ok" ] || pip install "git+https://github.com/commaai/metadrive.git@minimal"
+          # HARD ASSERT: the whole point of this workflow is to RUN test_driving. If
+          # metadrive isn't importable the test silently skips and pytest exits 0
+          # (hollow green). Fail loudly here instead. #30693
+          python -c "import metadrive; print('metadrive OK', metadrive.__version__)"
 
       - name: Rebuild BLASFEO with GENERIC target (arm64-mac asm kernels produce NaN QP solutions)
         run: |
@@ -101,6 +110,15 @@ jobs:
           source "$GITHUB_WORKSPACE/.venv/bin/activate"
           export CI=1 PYTHONUNBUFFERED=1
           cd openpilot/tools/sim
+          # sample per-process CPU during the run: is the SOFTWARE RENDER (metadrive
+          # process, LLVMpipe) starving the control loop (modeld/plannerd/controlsd)
+          # on the 3-core VM? quantifies whether HW render offload would cut the lag. #30693
+          ( for k in $(seq 1 40); do
+              echo "=== @t=$k ==="
+              ps -Ao %cpu,pid,command 2>/dev/null | sort -rn | head -14
+              sleep 1.5
+            done > /tmp/cpusample.txt 2>&1 ) &
+          CPUMON=$!
           # Run pytest in the FOREGROUND so its exit code is the authoritative pass/fail
           # signal (a backgrounded `... &` subshell swallows the exit code -> false green).
           # macOS has no coreutils `timeout`, so a background watchdog kills a hang.
@@ -108,9 +126,14 @@ jobs:
           PYPID=$!
           ( sleep 300; kill -9 "$PYPID" 2>/dev/null ) & WDOG=$!
           wait "$PYPID"; CODE=$?
-          kill "$WDOG" 2>/dev/null || true
+          kill "$WDOG" 2>/dev/null || true; kill "$CPUMON" 2>/dev/null || true
           pkill -f manager.py 2>/dev/null || true; pkill -f "work/openpilot" 2>/dev/null || true
-          echo "=== pytest summary (authoritative) ==="; grep -aE " passed| failed| error" /tmp/simtest.txt | tail -3
+          # HARD ASSERT against a hollow green: a SKIPPED test_driving exits 0. Require a real pass.
+          if ! grep -qaE "1 passed" /tmp/simtest.txt; then
+            echo "!!! test_driving did NOT pass (skipped or failed) -- forcing failure"; CODE=1
+          fi
+          echo "=== pytest summary (authoritative) ==="; grep -aE " passed| failed| error| skipped" /tmp/simtest.txt | tail -3
+          echo "=== CPU by process (software render vs control loop) ==="; cp /tmp/cpusample.txt "$GITHUB_WORKSPACE/cpusample.txt" 2>/dev/null || true; tail -4 /tmp/cpusample.txt 2>/dev/null | tr '|' '\n' | grep -aiE "python|render|metadrive|%CPU" | head -20
           echo "=== render fps ==="; grep -iaE "metadrive render fps" /tmp/simtest.txt | tail -3
           echo "=== assert / CarEvents / failure states ==="; grep -aiE "AssertionError|FAILED |CarEvents '\[|Failure states|not running '\[|did not engage" /tmp/simtest.txt | head -10
           echo "=== tracebacks ==="; awk '/Traceback \(most recent call last\)/{p=1} p{print} p&&/^[A-Za-z_.]*(Error|Exception):/{print "----"; p=0}' /tmp/simtest.txt | head -80
@@ -128,7 +151,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: simtest-full-log
-          path: simtest_full.txt
+          path: |
+            simtest_full.txt
+            cpusample.txt
           if-no-files-found: warn
 
       - name: Upload model-input frames
