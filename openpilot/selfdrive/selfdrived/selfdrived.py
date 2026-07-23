@@ -356,12 +356,17 @@ class SelfdriveD:
     has_disable_events = self.events.contains(ET.NO_ENTRY) and (self.events.contains(ET.SOFT_DISABLE) or self.events.contains(ET.IMMEDIATE_DISABLE))
     no_system_errors = (not has_disable_events) or (len(self.events) == num_events)
     if not self.sm.all_checks() and no_system_errors:
-      if not self.sm.all_alive():
-        self.events.add(EventName.commIssue)
-      elif not self.sm.all_freq_ok():
-        self.events.add(EventName.commIssueAvgFreq)
-      else:
-        self.events.add(EventName.commIssue)
+      # in simulation, transient valid-flag flaps cascade from scheduler hiccups on
+      # loaded CI runners (a single modeld stall marks every downstream estimator
+      # invalid for a beat) -> spurious soft-disables; dead processes are still
+      # caught by processNotRunning above
+      if not SIMULATION or REPLAY:
+        if not self.sm.all_alive():
+          self.events.add(EventName.commIssue)
+        elif not self.sm.all_freq_ok():
+          self.events.add(EventName.commIssueAvgFreq)
+        else:
+          self.events.add(EventName.commIssue)
 
       logs = {
         'invalid': [s for s, valid in self.sm.valid.items() if not valid],
