@@ -1,5 +1,6 @@
 import signal
 import threading
+import time
 import functools
 import numpy as np
 
@@ -269,3 +270,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       self.started.value = True
 
       self.rk.keep_time()
+      # cap Ratekeeper catch-up: after a stall the schedule is far behind and the
+      # loop runs uncapped, fast-forwarding the sim relative to wall clock (#30693)
+      if time.monotonic() > self.rk._next_frame_time + 0.5:
+        self.rk._next_frame_time = time.monotonic() + self.rk._interval

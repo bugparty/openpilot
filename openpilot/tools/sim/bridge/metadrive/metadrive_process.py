@@ -182,3 +182,9 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
         fps_t0 = now
 
     rk.keep_time()
+    # a stall (e.g. model warmup starving the CI box) leaves the Ratekeeper schedule
+    # far behind; it then runs uncapped to catch up, fast-forwarding sim physics
+    # relative to wall clock (openpilot controls lag behind -> overshoot). Drop the
+    # backlog so sim time stays realtime. #30693
+    if time.monotonic() > rk._next_frame_time + 0.5:
+      rk._next_frame_time = time.monotonic() + rk._interval
