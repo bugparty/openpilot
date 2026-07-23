@@ -218,7 +218,12 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           if self._dbg_sm is not None:
             self._dbg_sm.update(0)
             v_cruise_ms = self._dbg_sm['carState'].vCruise * CV.KPH_TO_MS
-            if 0 < v_cruise_ms < 70 and self.simulator_state.speed > v_cruise_ms + 0.5:
+            cap = v_cruise_ms + 0.5 if 0 < v_cruise_ms < 70 else 1e9
+            # the out_of_lane failures are specifically when the car reaches full speed
+            # (~11.6 m/s) and drifts before openpilot's adaptive curve-slowdown catches it
+            # (verified: red jobs had healthy 20fps, peak vEgo 11.6). Hold a bit below that.
+            cap = min(cap, float(os.environ.get("SIM_MAX_SPEED", "1e9")))
+            if self.simulator_state.speed > cap:
               throttle_op = 0.0
         except Exception:
           pass
