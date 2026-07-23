@@ -41,6 +41,15 @@ jobs:
             /tmp/pv/bin/python openpilot/tools/sim/tests/render_backend_probe.py "$BE" 2>&1 | grep -aiE "\[probe\]|VENDOR|RENDERER|VERSION|pipe=None|make_output=None|FAILED|Error" | head -12 || true
           done
 
+      - name: ANGLE hardware probe (EGL ctypes, no panda3d) -- the decisive test
+        run: |
+          cd $GITHUB_WORKSPACE
+          FW="/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Libraries"
+          echo "=== default (ANGLE picks backend) ==="
+          /tmp/pv/bin/python openpilot/tools/sim/tests/angle_egl_probe.py "$FW/libEGL.dylib" "$FW/libGLESv2.dylib" 2>&1 | head -20 || true
+          echo "=== force Metal backend ==="
+          ANGLE_DEFAULT_PLATFORM=metal /tmp/pv/bin/python openpilot/tools/sim/tests/angle_egl_probe.py "$FW/libEGL.dylib" "$FW/libGLESv2.dylib" 2>&1 | grep -aiE "GL_|EGL_|Metal|FAILED|err=" | head -12 || true
+
       - name: Try ANGLE from Chrome (GL ES -> Metal)
         run: |
           cd $GITHUB_WORKSPACE
