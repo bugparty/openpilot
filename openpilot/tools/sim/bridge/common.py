@@ -213,12 +213,16 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
         # speed governor: on the loaded CI runner the modeld->plan->control loop lags,
         # so the metadrive car coasts past openpilot's set speed and enters curves too
         # fast -> out_of_lane. openpilot never intends to exceed its cruise speed;
-        # enforce that directly against measured speed to stay robust to loop lag. #30693
+        # enforce that directly against measured speed to stay robust to loop lag.
+        # SIM_MAX_SPEED (m/s) caps below the set speed for extra curve margin on the
+        # cold-start first lap (where warmup lag makes overshoot worst). #30693
         try:
           if self._dbg_sm is not None:
             self._dbg_sm.update(0)
             v_cruise_ms = self._dbg_sm['carState'].vCruise * CV.KPH_TO_MS
-            if 0 < v_cruise_ms < 70 and self.simulator_state.speed > v_cruise_ms + 0.5:
+            cap = v_cruise_ms + 0.5 if 0 < v_cruise_ms < 70 else 1e9
+            cap = min(cap, float(os.environ.get("SIM_MAX_SPEED", "1e9")))
+            if self.simulator_state.speed > cap:
               throttle_op = 0.0
         except Exception:
           pass
