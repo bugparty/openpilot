@@ -280,7 +280,9 @@ class SelfdriveD:
         set_offroad_alert("Offroad_ExcessiveActuation", True, extra_text=str(excessive_actuation))
         self.excessive_actuation = True
 
-    if self.excessive_actuation:
+    if self.excessive_actuation and (not SIMULATION or REPLAY):
+      # the synthetic sim IMU + the bridge's throttle governor produce calibrated-pose
+      # acceleration spikes that trip this actuation-limit check spuriously (#30693)
       self.events.add(EventName.excessiveActuation)
     # ******************************************************************************************
 
