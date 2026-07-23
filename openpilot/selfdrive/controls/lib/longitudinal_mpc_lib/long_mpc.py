@@ -211,7 +211,9 @@ def gen_long_ocp():
 
   # More iterations take too much time and less lead to inaccurate convergence in
   # some situations. Ideally we would run just 1 iteration to ensure fixed runtime.
-  ocp.solver_options.qp_solver_iter_max = 10
+  # qpOASES (active-set) needs far more working-set recalculations than HPIPM
+  # (interior-point) needs iterations -- 10 caps it at status 36 on every launch solve
+  ocp.solver_options.qp_solver_iter_max = 200 if platform.system() == 'Darwin' else 10
   ocp.solver_options.qp_tol = 1e-3
 
   # set prediction horizon
