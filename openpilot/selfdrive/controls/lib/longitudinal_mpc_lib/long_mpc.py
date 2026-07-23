@@ -195,17 +195,19 @@ def gen_long_ocp():
   # Which is critical for our purpose where compute time is strictly bounded
   # We use HPIPM in the SPEED_ABS mode, which ensures fastest runtime. This
   # does not cause issues since the problem is well bounded.
-  ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
   if platform.system() == 'Darwin':
     # the arm64-macOS HPIPM/BLASFEO runtime produces NaN solutions (QP status 3)
-    # on ~50% of solves in the default mode -- a minimal clean-input probe fails
+    # on 50-100% of solves (mode-dependent) -- a minimal clean-input probe fails
     # on the mac CI runner while identical code passes 100/100 on Linux x86.
-    # ROBUST mode trades speed for numerically safer settings. See issue #30693.
-    ocp.solver_options.hpipm_mode = 'ROBUST'
+    # qpOASES is plain C (no BLASFEO assembly kernels) and unaffected. #30693
+    ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
+  else:
+    ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
   ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
   ocp.solver_options.integrator_type = 'ERK'
   ocp.solver_options.nlp_solver_type = ACADOS_SOLVER_TYPE
-  ocp.solver_options.qp_solver_cond_N = 1
+  if platform.system() != 'Darwin':
+    ocp.solver_options.qp_solver_cond_N = 1
 
   # More iterations take too much time and less lead to inaccurate convergence in
   # some situations. Ideally we would run just 1 iteration to ensure fixed runtime.
