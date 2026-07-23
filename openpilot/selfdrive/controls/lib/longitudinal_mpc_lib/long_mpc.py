@@ -379,8 +379,11 @@ class LongitudinalMpc:
         cloudlog.warning(f"Long mpc reset, solution_status: {self.solution_status}")
       if os.environ.get('LONG_MPC_DUMP'):
         # diagnose persistent QP failures on the macOS CI runner (#30693)
-        print(f"[mpc] FAIL status={self.solution_status} x0={self.x0} "
-              f"p0={self.params[0]} pN={self.params[N]} mode={self.mode}", flush=True)
+        try:
+          print(f"[mpc] FAIL status={self.solution_status} x0={self.x0} "
+                f"p0={self.params[0]} pN={self.params[N]}", flush=True)
+        except Exception:
+          pass
       self.reset()
 
 
