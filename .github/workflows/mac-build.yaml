@@ -59,7 +59,7 @@ jobs:
           # HARD ASSERT: the whole point of this workflow is to RUN test_driving. If
           # metadrive isn't importable the test silently skips and pytest exits 0
           # (hollow green). Fail loudly here instead. #30693
-          python -c "import metadrive; print('metadrive OK', metadrive.__version__)"
+          python -c "import metadrive.envs.metadrive_env; print('metadrive import OK')"
 
       - name: Rebuild BLASFEO with GENERIC target (arm64-mac asm kernels produce NaN QP solutions)
         run: |
