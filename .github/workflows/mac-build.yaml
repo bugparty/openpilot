@@ -52,6 +52,22 @@ jobs:
           uv pip install "git+https://github.com/commaai/metadrive.git@minimal" 2>&1 | tail -3 || \
             pip install "git+https://github.com/commaai/metadrive.git@minimal"
 
+      - name: Rebuild BLASFEO with GENERIC target (arm64-mac asm kernels produce NaN QP solutions)
+        run: |
+          # HPIPM/BLASFEO from the comma-deps-acados mac wheel NaNs 50-100% of long-MPC
+          # solves on this runner (probe below validates). Swap in a plain-C BLASFEO. #30693
+          git clone --depth 1 https://github.com/giaf/blasfeo.git /tmp/blasfeo
+          cmake -S /tmp/blasfeo -B /tmp/blasfeo/build -DTARGET=GENERIC -DBUILD_SHARED_LIBS=ON \
+                -DCMAKE_BUILD_TYPE=Release -DBLASFEO_EXAMPLES=OFF 2>&1 | tail -2
+          cmake --build /tmp/blasfeo/build -j3 2>&1 | tail -2
+          ACADOS_LIB=$(find "$GITHUB_WORKSPACE/.venv" -name "libblasfeo.dylib" -path "*acados*" | head -1)
+          echo "replacing: $ACADOS_LIB"
+          NEW=$(find /tmp/blasfeo/build -name "libblasfeo*.dylib" | head -1)
+          install_name_tool -id @rpath/libblasfeo.dylib "$NEW"
+          cp "$NEW" "$ACADOS_LIB"
+          codesign -f -s - "$ACADOS_LIB"
+          echo "done"
+
       - name: Probe acados long MPC standalone (does the solver work on this host at all?)
         run: |
           source "$GITHUB_WORKSPACE/.venv/bin/activate"
