@@ -1,0 +1,55 @@
+name: mac-render-probe
+
+# Lightweight probe (#30693): can we get HARDWARE (Metal) rendering for Panda3D on
+# the free macos runner, instead of Apple's software GL? Installs only panda3d +
+# metadrive (no full openpilot build) so it iterates in ~2 min.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ mac-render-probe ]
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System / GPU info
+        run: |
+          sw_vers; uname -m
+          system_profiler SPDisplaysDataType 2>/dev/null | head -30 || true
+          echo "=== Chrome present? (bundles ANGLE dylibs) ==="
+          ls -la "/Applications/Google Chrome.app/Contents/Frameworks/"*/Libraries/*.dylib 2>/dev/null | grep -iE "GLES|EGL" || echo "no chrome ANGLE libs"
+          find /Applications -iname "libGLESv2.dylib" 2>/dev/null | head
+          find /Applications -iname "libEGL.dylib" 2>/dev/null | head
+
+      - name: Install panda3d
+        run: |
+          python3 -m venv /tmp/pv
+          /tmp/pv/bin/pip install -q panda3d numpy 2>&1 | tail -2
+          echo "=== panda3d display modules in the wheel ==="
+          PANDA=$(/tmp/pv/bin/python -c "import panda3d,os;print(os.path.dirname(panda3d.__file__))")
+          ls "$PANDA" | grep -iE "gl|display|tiny|gles" || true
+          find "$PANDA" -iname "*gles*" -o -iname "*pandagl*" -o -iname "*tinydisplay*" 2>/dev/null | head
+
+      - name: Probe backends (GL_RENDERER for each)
+        run: |
+          cd $GITHUB_WORKSPACE
+          for BE in pandagl pandagles2 p3tinydisplay; do
+            echo "======== $BE ========"
+            /tmp/pv/bin/python openpilot/tools/sim/tests/render_backend_probe.py "$BE" 2>&1 | grep -aiE "\[probe\]|VENDOR|RENDERER|VERSION|pipe=None|make_output=None|FAILED|Error" | head -12 || true
+          done
+
+      - name: Try ANGLE from Chrome (GL ES -> Metal)
+        run: |
+          cd $GITHUB_WORKSPACE
+          CHROME_LIB=$(find "/Applications/Google Chrome.app" -iname "libGLESv2.dylib" 2>/dev/null | head -1)
+          echo "chrome GLESv2: $CHROME_LIB"
+          if [ -n "$CHROME_LIB" ]; then
+            mkdir -p /tmp/angle
+            cp "$(dirname "$CHROME_LIB")"/libGLESv2.dylib "$(dirname "$CHROME_LIB")"/libEGL.dylib /tmp/angle/ 2>/dev/null || true
+            ls -la /tmp/angle
+            # point panda3d's gles2 loader at ANGLE
+            DYLD_LIBRARY_PATH=/tmp/angle /tmp/pv/bin/python openpilot/tools/sim/tests/render_backend_probe.py pandagles2 "gl-version 3 0" 2>&1 | grep -aiE "\[probe\]|VENDOR|RENDERER|VERSION|FAILED|Error|ANGLE|Metal" | head -12 || true
+          fi
