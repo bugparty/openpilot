@@ -57,9 +57,12 @@ jobs:
           # HPIPM/BLASFEO from the comma-deps-acados mac wheel NaNs 50-100% of long-MPC
           # solves on this runner (probe below validates). Swap in a plain-C BLASFEO. #30693
           git clone --depth 1 https://github.com/giaf/blasfeo.git /tmp/blasfeo
-          cmake -S /tmp/blasfeo -B /tmp/blasfeo/build -DTARGET=GENERIC -DBUILD_SHARED_LIBS=ON \
-                -DCMAKE_BUILD_TYPE=Release -DBLASFEO_EXAMPLES=OFF 2>&1 | tail -2
-          cmake --build /tmp/blasfeo/build -j3 2>&1 | tail -2
+          # the "Remove Homebrew" step dropped /opt/homebrew/bin (where the runner's cmake lives)
+          CMAKE=$(command -v cmake || echo /opt/homebrew/bin/cmake)
+          echo "using cmake: $CMAKE"
+          "$CMAKE" -S /tmp/blasfeo -B /tmp/blasfeo/build -DTARGET=GENERIC -DBUILD_SHARED_LIBS=ON \
+                -DCMAKE_BUILD_TYPE=Release -DBLASFEO_EXAMPLES=OFF > /tmp/blasfeo_cfg.log 2>&1 || { tail -8 /tmp/blasfeo_cfg.log; exit 1; }
+          "$CMAKE" --build /tmp/blasfeo/build -j3 > /tmp/blasfeo_bld.log 2>&1 || { tail -8 /tmp/blasfeo_bld.log; exit 1; }
           ACADOS_LIB=$(find "$GITHUB_WORKSPACE/.venv" -name "libblasfeo.dylib" -path "*acados*" | head -1)
           echo "replacing: $ACADOS_LIB"
           echo "build artifacts:"; find /tmp/blasfeo/build -name "libblasfeo*" | head -5
@@ -67,7 +70,7 @@ jobs:
           if [ -z "$NEW" ]; then
             # cmake produced a static lib only; wrap it into a dylib
             AR=$(find /tmp/blasfeo/build -name "libblasfeo.a" | head -1)
-            clang -dynamiclib -arch arm64 -o /tmp/blasfeo/libblasfeo.dylib -Wl,-force_load,"$AR" -lm
+            clang -dynamiclib -arch arm64 -o /tmp/blasfeo/libblasfeo.dylib -Wl,-force_load,"$AR"
             NEW=/tmp/blasfeo/libblasfeo.dylib
           fi
           install_name_tool -id @rpath/libblasfeo.dylib "$NEW"
