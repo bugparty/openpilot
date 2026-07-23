@@ -14,9 +14,17 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import Longi
 
 def main():
   mpc = LongitudinalMpc(dt=0.05)
-  mpc.mode = 'acc'
   radar_state = log.RadarState.new_message().as_reader()
   personality = log.LongitudinalPersonality.standard
+
+  # mpc.run() calls reset() on failure, which ZEROES solution_status before we can
+  # read it -- count resets to see the true failure count
+  resets = {"n": 0}
+  orig_reset = mpc.reset
+  def counting_reset():
+    resets["n"] += 1
+    orig_reset()
+  mpc.reset = counting_reset
 
   statuses: Counter = Counter()
   v_ego, a_ego = 0.0, 0.0
@@ -29,9 +37,9 @@ def main():
     v_ego = float(np.interp(0.05, np.linspace(0, 10, len(mpc.v_solution)), mpc.v_solution))
     a_ego = float(np.interp(0.05, np.linspace(0, 10, len(mpc.a_solution)), mpc.a_solution))
 
-  print(f"[probe] statuses over 100 launch solves: {dict(statuses)}")
+  print(f"[probe] statuses over 100 launch solves: {dict(statuses)} resets={resets['n']}")
   print(f"[probe] final v={v_ego:.2f} a={a_ego:.2f}")
-  print(f"[probe] {'PASS' if statuses.get(0, 0) >= 95 else 'FAIL'}")
+  print(f"[probe] {'PASS' if resets['n'] == 0 and v_ego > 0.05 else 'FAIL'}")
 
 if __name__ == "__main__":
   main()

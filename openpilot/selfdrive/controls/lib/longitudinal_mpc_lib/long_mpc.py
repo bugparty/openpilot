@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import platform
 import time
 import numpy as np
 from openpilot.cereal import log
@@ -195,6 +196,12 @@ def gen_long_ocp():
   # We use HPIPM in the SPEED_ABS mode, which ensures fastest runtime. This
   # does not cause issues since the problem is well bounded.
   ocp.solver_options.qp_solver = 'PARTIAL_CONDENSING_HPIPM'
+  if platform.system() == 'Darwin':
+    # the arm64-macOS HPIPM/BLASFEO runtime produces NaN solutions (QP status 3)
+    # on ~50% of solves in the default mode -- a minimal clean-input probe fails
+    # on the mac CI runner while identical code passes 100/100 on Linux x86.
+    # ROBUST mode trades speed for numerically safer settings. See issue #30693.
+    ocp.solver_options.hpipm_mode = 'ROBUST'
   ocp.solver_options.hessian_approx = 'GAUSS_NEWTON'
   ocp.solver_options.integrator_type = 'ERK'
   ocp.solver_options.nlp_solver_type = ACADOS_SOLVER_TYPE
